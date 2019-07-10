@@ -1,2 +1,3 @@
-# hanafs
-Mount hana xs repo to local filesystem
+# Hana FS
+
+Mount hana xs repository to local filesystem
