@@ -36,6 +36,7 @@ require (
 	github.com/skratchdot/open-golang v0.0.0-20190402232053-79abb63cd66e // indirect
 	github.com/sqs/goreturns v0.0.0-20181028201513-538ac6014518 // indirect
 	github.com/stripe/safesql v0.0.0-20171221195208-cddf355596fe // indirect
+	github.com/tidwall/gjson v1.3.0
 	github.com/tsenart/deadcode v0.0.0-20160724212837-210d2dc333e9 // indirect
 	github.com/uudashr/gopkgs v2.0.1+incompatible // indirect
 	github.com/walle/lll v0.0.0-20160702150637-8b13b3fbf731 // indirect
