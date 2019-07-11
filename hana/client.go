@@ -16,6 +16,8 @@ import (
 
 const keyCSRFTokenHeader = "x-csrf-token"
 
+const keyAuthorization = "Authorization"
+
 const valueRequired = "required"
 
 // Client type
@@ -46,6 +48,15 @@ func (c *Client) request(method, path string, infos ...interface{}) (*req.Resp, 
 	// format url
 	url := c.formatURI(path)
 
+	password, _ := c.uri.User.Password()
+
+	header := req.Header{
+		keyCSRFTokenHeader: c.token,
+		keyAuthorization:   basicAuth(c.uri.User.Username(), password),
+	}
+
+	infos = append(infos, header)
+
 	// do request
 	resp, err := req.Do(method, url, infos...)
 
@@ -68,8 +79,10 @@ func (c *Client) request(method, path string, infos ...interface{}) (*req.Resp, 
 
 func (c *Client) fetchCSRFToken() error {
 
+	password, _ := c.uri.User.Password()
 	header := req.Header{
 		keyCSRFTokenHeader: "fetch",
+		keyAuthorization:   basicAuth(c.uri.User.Username(), password),
 	}
 
 	resp, err := c.req.Head(c.formatURI("/sap/hana/xs/dt/base/info"), header)

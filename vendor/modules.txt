@@ -8,3 +8,5 @@ github.com/tidwall/gjson
 github.com/tidwall/match
 # github.com/tidwall/pretty v1.0.0
 github.com/tidwall/pretty
+# github.com/urfave/cli v1.20.0
+github.com/urfave/cli

@@ -2,5 +2,6 @@
   "cSpell.words": [
     "CSRF",
     "hana"
-  ]
+  ],
+  "editor.formatOnSave": true
 }

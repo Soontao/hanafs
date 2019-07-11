@@ -60,17 +60,18 @@ type DirectoryDetailAttributesSapBackPack struct {
 }
 
 type Child struct {
-	Name             string           `json:"Name"`
-	ID               string           `json:"Id"`
-	Location         string           `json:"Location"`
-	ContentLocation  string           `json:"ContentLocation"`
-	ChildrenLocation string           `json:"ChildrenLocation"`
-	ExportLocation   string           `json:"ExportLocation"`
-	ImportLocation   string           `json:"ImportLocation"`
-	Directory        bool             `json:"Directory"`
-	Attributes       Attributes       `json:"Attributes"`
-	Workspaces       []interface{}    `json:"Workspaces"`
-	SapBackPack      ChildSapBackPack `json:"SapBackPack"`
+	Name             string        `json:"Name"`
+	ID               string        `json:"Id"`
+	Location         string        `json:"Location"`
+	ContentLocation  string        `json:"ContentLocation"`
+	ChildrenLocation string        `json:"ChildrenLocation"`
+	ExportLocation   string        `json:"ExportLocation"`
+	ImportLocation   string        `json:"ImportLocation"`
+	Directory        bool          `json:"Directory"`
+	Attributes       Attributes    `json:"Attributes"`
+	Workspaces       []interface{} `json:"Workspaces"`
+	// for file, sap back pack is different
+	// SapBackPack      ChildSapBackPack `json:"SapBackPack"`
 }
 
 type ChildSapBackPack struct {
