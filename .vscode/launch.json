@@ -10,13 +10,7 @@
       "request": "launch",
       "mode": "auto",
       "program": "${workspaceFolder}/cli",
-      "env": {
-        "HANA_USER": "BTHEO",
-        "HANA_PASSWORD": "Welcome2",
-        "HANA_TENANT": "poca31015082.hana.ondemand.com",
-        "MOUNT_PATH": "../../tmp/hana42",
-        "HANA_TENANT_BASE_PATH": "/public/theo"
-      },
+      "env": {},
       "args": []
     }
   ]
