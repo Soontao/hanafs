@@ -1,6 +1,7 @@
 package fs
 
 import (
+	"path/filepath"
 	"sync"
 
 	"github.com/Soontao/hanafs/hana"
@@ -152,21 +153,34 @@ func (f *HanaFS) getDir(path string) (*CachedDirectory, error) {
 			fsChildStat.Mode = fuse.S_IFREG | 0777 // Regular File.
 
 			if fsChildStat.Size == 0 {
-				if content, err := f.client.ReadFile(path); err == nil {
-					fsChildStat.Size = int64(len(content))
-				}
+
+				go func() {
+					wg.Add(1)
+
+					defer wg.Done()
+
+					if content, err := f.client.ReadFile(path); err == nil {
+						fsChildStat.Size = int64(len(content))
+					}
+
+				}()
+
 			}
 		}
 
 		nodeName := hanaChild.Name
-		nodePath := hanaChild.ContentLocation
 
 		rt.children[nodeName] = fsChildStat
-		f.statCache.PreStatCacheSeconds(nodePath, fsChildStat, DefaultRemoteCacheSeconds)
 
 	}
 
+	// wait parallel requests finished
 	wg.Wait()
+
+	for nodeName, nodeStat := range rt.children {
+		nodePath := filepath.Join(path, nodeName)
+		f.statCache.PreStatCacheSeconds(nodePath, nodeStat, DefaultRemoteCacheSeconds)
+	}
 
 	f.dirCache.PreDirectoryCacheSeconds(path, rt, DefaultRemoteCacheSeconds)
 
@@ -192,7 +206,7 @@ func (f *HanaFS) getStat(path string) (*fuse.Stat_t, error) {
 	s.Mtim = now
 
 	if hanaStat.Directory {
-		s.Mode = fuse.S_IFDIR | 0777
+		s.Mode = fuse.S_IFDIR | 0666
 	} else {
 		s.Mode = fuse.S_IFREG | 0777 // Regular File.
 		if s.Size == 0 {
