@@ -1,6 +1,7 @@
 package hana
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,6 +9,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/tidwall/gjson"
 
@@ -27,6 +30,21 @@ type Client struct {
 	req           *req.Req
 	sslVerify     bool
 	baseDirectory string
+	tokenLock     sync.RWMutex
+}
+
+// get csrf token value
+func (c *Client) getToken() string {
+	c.tokenLock.RLock()
+	defer c.tokenLock.RUnlock()
+	return c.token
+}
+
+// set csrf token value
+func (c *Client) setToken(tokenValue string) {
+	c.tokenLock.Lock()
+	defer c.tokenLock.Unlock()
+	c.token = tokenValue
 }
 
 func (c *Client) formatURI(path string) string {
@@ -51,7 +69,7 @@ func (c *Client) request(method, path string, infos ...interface{}) (*req.Resp, 
 	password, _ := c.uri.User.Password()
 
 	header := req.Header{
-		keyCSRFTokenHeader: c.token,
+		keyCSRFTokenHeader: c.getToken(),
 		keyAuthorization:   basicAuth(c.uri.User.Username(), password),
 	}
 
@@ -98,7 +116,7 @@ func (c *Client) fetchCSRFToken() error {
 	token := httpResponse.Header.Get("x-csrf-token")
 
 	if len(token) != 0 && token != "unsafe" {
-		c.token = token
+		c.setToken(token)
 	} else {
 		switch {
 		case 300 <= status && status < 400:
@@ -130,11 +148,15 @@ func (c *Client) checkURIValidate(uri *url.URL) error {
 	return nil
 }
 
+func (c *Client) formatDtFilePath(filepath string) string {
+	return fmt.Sprintf("/sap/hana/xs/dt/base/file%s%s", c.baseDirectory, filepath)
+}
+
 // ReadFile content
 func (c *Client) ReadFile(filePath string) ([]byte, error) {
 	res, err := c.request(
 		"GET",
-		fmt.Sprintf("/sap/hana/xs/dt/base/file%s", filePath),
+		c.formatDtFilePath(filePath),
 	)
 
 	if err != nil {
@@ -153,7 +175,7 @@ func (c *Client) ReadDirectory(filePath string) (*DirectoryDetail, error) {
 
 	res, err := c.request(
 		"GET",
-		fmt.Sprintf("/sap/hana/xs/dt/base/file%s", filePath),
+		c.formatDtFilePath(filePath),
 		req.QueryParam{"depth": 1},
 	)
 
@@ -187,7 +209,7 @@ func (c *Client) Stat(filePath string) (*PathStat, error) {
 
 	res, err := c.request(
 		"GET",
-		fmt.Sprintf("/sap/hana/xs/dt/base/file%s", filePath),
+		c.formatDtFilePath(filePath),
 		query,
 	)
 
@@ -249,6 +271,12 @@ func NewClient(uri *url.URL) (*Client, error) {
 	if err := rt.checkCredential(); err != nil {
 		return nil, err
 	}
+
+	trans, _ := rt.req.Client().Transport.(*http.Transport)
+
+	trans.MaxIdleConns = 50
+	trans.TLSHandshakeTimeout = 20 * time.Second
+	trans.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 
 	return rt, nil
 }

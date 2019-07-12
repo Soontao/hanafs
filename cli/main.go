@@ -48,6 +48,12 @@ func main() {
 			Value:  "./hana",
 			Usage:  "Hana File System Mount Entry Point",
 		},
+		cli.StringFlag{
+			Name:   "base, b",
+			EnvVar: "HANA_TENANT_BASE_PATH",
+			Usage:  "Hana Tenant Base Path",
+			Value:  "/",
+		},
 	}
 
 	app := cli.NewApp()
@@ -70,10 +76,12 @@ func appAction(c *cli.Context) (err error) {
 	password := c.GlobalString("password")
 	host := c.GlobalString("host")
 	mountpoint := c.GlobalString("mount")
+	base := c.GlobalString("base")
 
 	uri := &url.URL{
 		Host: host,
 		User: url.UserPassword(user, password),
+		Path: base,
 	}
 
 	client, err := hana.NewClient(uri)
@@ -83,10 +91,6 @@ func appAction(c *cli.Context) (err error) {
 	}
 
 	fs := fuse.NewFileSystemHost(fs.NewHanaFS(client))
-
-	defer func() {
-		fs.Unmount()
-	}()
 
 	fs.SetCapReaddirPlus(true)
 
