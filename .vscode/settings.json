@@ -3,5 +3,6 @@
     "CSRF",
     "hana"
   ],
-  "editor.formatOnSave": true
+  "editor.formatOnSave": true,
+  "go.useLanguageServer": true
 }

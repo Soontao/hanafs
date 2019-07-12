@@ -147,9 +147,9 @@ func (f *HanaFS) getDir(path string) (*CachedDirectory, error) {
 
 		// parallel requested
 		if hanaChild.Directory {
-			fsChildStat.Mode = fuse.S_IFDIR | fuse.S_IRWXU
+			fsChildStat.Mode = fuse.S_IFDIR | 0666
 		} else {
-			fsChildStat.Mode = fuse.S_IFREG | fuse.S_IRWXU // Regular File.
+			fsChildStat.Mode = fuse.S_IFREG | 0777 // Regular File.
 
 			if fsChildStat.Size == 0 {
 				if content, err := f.client.ReadFile(path); err == nil {
@@ -192,9 +192,9 @@ func (f *HanaFS) getStat(path string) (*fuse.Stat_t, error) {
 	s.Mtim = now
 
 	if hanaStat.Directory {
-		s.Mode = fuse.S_IFDIR | fuse.S_IRWXU
+		s.Mode = fuse.S_IFDIR | 0777
 	} else {
-		s.Mode = fuse.S_IFREG | fuse.S_IRWXU // Regular File.
+		s.Mode = fuse.S_IFREG | 0777 // Regular File.
 		if s.Size == 0 {
 			if content, err := f.client.ReadFile(path); err == nil {
 				s.Size = int64(len(content))
