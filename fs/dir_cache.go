@@ -17,7 +17,7 @@ type DirectoryCache struct {
 	cacheLock sync.RWMutex
 }
 
-// GetDir directly, if not exist, will retrive but not cache
+// GetDir directly, if not exist, will retrive and cache it
 func (sc *DirectoryCache) GetDir(path string) (*CachedDirectory, error) {
 	if v, exist := sc.cache[path]; exist {
 		return v, nil
@@ -26,6 +26,7 @@ func (sc *DirectoryCache) GetDir(path string) (*CachedDirectory, error) {
 	if err != nil {
 		return nil, err
 	}
+	sc.PreDirectoryCacheSeconds(path, v, DefaultRemoteCacheSeconds)
 	return v, nil
 }
 

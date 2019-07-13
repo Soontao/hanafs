@@ -11,6 +11,11 @@
       "mode": "auto",
       "program": "${workspaceFolder}/cli",
       "env": {},
+      "windows": {
+        "env": {
+          "CPATH": "C:\\Program Files (x86)\\WinFsp\\inc\\fuse",
+        }
+      },
       "args": []
     }
   ]

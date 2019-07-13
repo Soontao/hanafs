@@ -17,33 +17,6 @@ type HanaFS struct {
 	client    *hana.Client
 	statCache *StatCache
 	dirCache  *DirectoryCache
-	// run async job recheck this
-	notExistList []string
-}
-
-func (f *HanaFS) isNotExist(path string) bool {
-	for _, f := range f.notExistList {
-		if f == path {
-			return true
-		}
-	}
-	return false
-}
-
-func (f *HanaFS) notExist(path string) {
-	if !f.isNotExist(path) {
-		f.notExistList = append(f.notExistList, path)
-	}
-}
-
-func (f *HanaFS) removeFromNotExist(path string) {
-	if !f.isNotExist(path) {
-		for i, notExistPath := range f.notExistList {
-			if notExistPath == path {
-				f.notExistList = append(f.notExistList[:i], f.notExistList[i+1:]...)
-			}
-		}
-	}
 }
 
 func (f *HanaFS) Release(path string, fh uint64) int {
@@ -52,6 +25,24 @@ func (f *HanaFS) Release(path string, fh uint64) int {
 
 func (f *HanaFS) Open(path string, flags int) (errc int, fh uint64) {
 	return 0, 0
+}
+
+func (f *HanaFS) Create(path string, flags int, mode uint32) (int, uint64) {
+	base, name := filepath.Split(path)
+	if err := f.client.Create(base, name, false); err != nil {
+		return -fuse.EIO, 0
+	}
+	f.statCache.FileIsExistNow(path)
+	return 0, 0
+}
+
+func (f *HanaFS) Mknod(path string, mode uint32, dev uint64) (errc int) {
+	base, name := filepath.Split(path)
+	if err := f.client.Create(base, name, false); err != nil {
+		return -fuse.EIO
+	}
+	f.statCache.FileIsExistNow(path)
+	return 0
 }
 
 func (f *HanaFS) Readdir(path string,
@@ -76,14 +67,14 @@ func (f *HanaFS) Readdir(path string,
 
 func (f *HanaFS) Getattr(path string, s *fuse.Stat_t, fh uint64) int {
 
-	if f.isNotExist(path) {
+	if f.statCache.CheckIfFileNotExist(path) {
 		return -fuse.ENOENT
 	}
 
 	stat, err := f.statCache.GetStat(path)
 
 	if err != nil {
-		f.notExist(path)
+		f.statCache.AddNotExistFileCache(path)
 		return -fuse.ENOENT
 	}
 
@@ -182,8 +173,6 @@ func (f *HanaFS) getDir(path string) (*CachedDirectory, error) {
 		f.statCache.PreStatCacheSeconds(nodePath, nodeStat, DefaultRemoteCacheSeconds)
 	}
 
-	f.dirCache.PreDirectoryCacheSeconds(path, rt, DefaultRemoteCacheSeconds)
-
 	return rt, nil
 }
 
@@ -215,8 +204,6 @@ func (f *HanaFS) getStat(path string) (*fuse.Stat_t, error) {
 			}
 		}
 	}
-
-	f.statCache.PreStatCacheSeconds(path, s, DefaultRemoteCacheSeconds)
 
 	return s, nil
 

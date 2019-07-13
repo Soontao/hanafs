@@ -21,6 +21,8 @@ const keyCSRFTokenHeader = "x-csrf-token"
 
 const keyAuthorization = "Authorization"
 
+const keyContentType = "Content-Type"
+
 const valueRequired = "required"
 
 // Client type
@@ -76,15 +78,27 @@ func (c *Client) request(method, path string, infos ...interface{}) (*req.Resp, 
 	infos = append(infos, header)
 
 	// do request
-	resp, err := req.Do(method, url, infos...)
+	resp, err := c.req.Do(method, url, infos...)
 
-	if isCSRFTokenError(resp.Response()) {
-		// try refresh csrf token
-		if err := c.fetchCSRFToken(); err != nil {
-			return nil, err
+	if resp != nil {
+
+		if isCSRFTokenError(resp.Response()) {
+			// try refresh csrf token
+			if err := c.fetchCSRFToken(); err != nil {
+				return nil, err
+			}
+			// update token
+			header[keyCSRFTokenHeader] = c.getToken()
+			// re process request
+			resp, err = c.req.Do(method, url, infos...)
 		}
-		// re process request
-		resp, err = req.Do(method, url, infos...)
+		response := resp.Response()
+
+		switch {
+		case response.StatusCode > 400:
+			err = errors.New(response.Status)
+		}
+
 	}
 
 	if err != nil {
@@ -103,7 +117,7 @@ func (c *Client) fetchCSRFToken() error {
 		keyAuthorization:   basicAuth(c.uri.User.Username(), password),
 	}
 
-	resp, err := c.req.Head(c.formatURI("/sap/hana/xs/dt/base/info"), header)
+	resp, err := c.req.Head(c.formatURI("/sap/hana/xs/dt/base/file"), header)
 
 	if err != nil {
 		return err
@@ -148,8 +162,9 @@ func (c *Client) checkURIValidate(uri *url.URL) error {
 	return nil
 }
 
-func (c *Client) formatDtFilePath(filepath string) string {
-	return fmt.Sprintf("/sap/hana/xs/dt/base/file%s%s", c.baseDirectory, filepath)
+func (c *Client) formatDtFilePath(path string) string {
+	realPath := strings.ReplaceAll(path, "\\", "/")
+	return fmt.Sprintf("/sap/hana/xs/dt/base/file%s%s", c.baseDirectory, realPath)
 }
 
 // ReadFile content
@@ -168,6 +183,32 @@ func (c *Client) ReadFile(filePath string) ([]byte, error) {
 	}
 
 	return res.ToBytes()
+}
+
+// Create file or directory
+func (c *Client) Create(base, name string, dir bool) error {
+
+	payload := map[string]interface{}{
+		"Name":      name,
+		"Directory": dir,
+	}
+
+	res, err := c.request(
+		"POST",
+		c.formatDtFilePath(base),
+		req.BodyJSON(&payload),
+		req.Header{keyContentType: "application/json"},
+	)
+
+	if err == nil && res.Response().StatusCode >= 300 {
+		err = errors.New(res.Response().Status)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // ReadDirectory information
@@ -271,6 +312,8 @@ func NewClient(uri *url.URL) (*Client, error) {
 	if err := rt.checkCredential(); err != nil {
 		return nil, err
 	}
+
+	rt.req.EnableCookie(true)
 
 	trans, _ := rt.req.Client().Transport.(*http.Transport)
 

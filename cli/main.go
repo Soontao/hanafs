@@ -1,9 +1,11 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/billziss-gh/cgofuse/fuse"
 
@@ -45,7 +47,6 @@ func main() {
 		cli.StringFlag{
 			Name:   "mount, m",
 			EnvVar: "MOUNT_PATH",
-			Value:  "./hana",
 			Usage:  "Hana File System Mount Entry Point",
 		},
 		cli.StringFlag{
@@ -77,6 +78,24 @@ func appAction(c *cli.Context) (err error) {
 	host := c.GlobalString("host")
 	mountpoint := c.GlobalString("mount")
 	base := c.GlobalString("base")
+
+	if len(host) == 0 {
+		return errors.New("Must set the hana tenant hostname")
+	}
+
+	if len(mountpoint) == 0 {
+		parts := strings.SplitN(host, ".", 2)
+		if len(parts) == 2 {
+			mountpoint = parts[0]
+		} else {
+			return errors.New("Must set the mount point")
+		}
+	}
+
+	if !strings.HasPrefix(base, "/") {
+		// add prefix
+		base = "/" + base
+	}
 
 	uri := &url.URL{
 		Host: host,

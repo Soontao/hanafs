@@ -3,6 +3,17 @@
     "CSRF",
     "hana"
   ],
+  "[go]": {
+    "editor.snippetSuggestions": "none",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": true
+    }
+  },
+  "gopls": {
+    "usePlaceholders": true // add parameter placeholders when completing a function
+  },
+  "files.eol": "\n",
   "editor.formatOnSave": true,
   "go.useLanguageServer": true
 }
