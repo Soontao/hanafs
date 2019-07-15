@@ -259,6 +259,24 @@ func (c *Client) ReadDirectory(filePath string) (*DirectoryDetail, error) {
 
 }
 
+func (c *Client) Delete(path string) (rt error) {
+
+	res, err := c.request(
+		"DELETE",
+		c.formatDtFilePath(path),
+	)
+
+	if res.Response().StatusCode == 404 {
+		return ErrFileNotFound
+	}
+
+	if err != nil {
+		return err
+	}
+
+	return
+}
+
 // Stat func
 func (c *Client) Stat(filePath string) (*PathStat, error) {
 

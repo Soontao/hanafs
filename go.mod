@@ -10,4 +10,5 @@ require (
 	github.com/stretchr/testify v1.3.0 // indirect
 	github.com/tidwall/gjson v1.3.1
 	github.com/urfave/cli v1.20.0
+	golang.org/x/sync v0.0.0-20190423024810-112230192c58
 )

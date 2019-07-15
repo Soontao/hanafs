@@ -11,7 +11,7 @@ import (
 //
 // in memory stat cache
 type StatCache struct {
-	cache     map[string]*fuse.Stat_t
+	cache     *sync.Map
 	provider  func(string) (*fuse.Stat_t, error)
 	cacheLock sync.RWMutex
 	notExist  []string
@@ -37,6 +37,7 @@ func (sc *StatCache) AddNotExistFileCache(path string) {
 		defer sc.cacheLock.Unlock()
 		sc.notExist = append(sc.notExist, path)
 	}
+
 }
 
 // FileIsExistNow to remove un-existed cache
@@ -52,13 +53,16 @@ func (sc *StatCache) FileIsExistNow(path string) {
 			}
 		}
 	}
+
 }
 
 // FilesIsExistNow to remove un-existed cache
 func (sc *StatCache) FilesIsExistNow(pathes []string) {
+
 	for _, path := range pathes {
 		sc.FileIsExistNow(path)
 	}
+
 }
 
 // GetOrCacheStat func, if not exist, will retrive and cache it
@@ -80,13 +84,15 @@ func (sc *StatCache) GetDirStats(path string) (rt *Directory) {
 		children: map[string]*fuse.Stat_t{},
 	}
 
-	for cachedFilePath, stat := range sc.cache {
+	sc.cache.Range(func(key interface{}, value interface{}) bool {
 
-		base, name := filepath.Split(cachedFilePath)
+		base, name := filepath.Split(key.(string))
 		if base == path {
-			rt.children[name] = stat
+			rt.children[name] = value.(*fuse.Stat_t)
 		}
-	}
+
+		return true
+	})
 
 	return
 }
@@ -94,8 +100,8 @@ func (sc *StatCache) GetDirStats(path string) (rt *Directory) {
 // GetStat directly, if not exist, will retrive
 func (sc *StatCache) GetStat(path string) (*fuse.Stat_t, error) {
 
-	if v, exist := sc.cache[path]; exist {
-		return v, nil
+	if v, exist := sc.cache.Load(path); exist {
+		return v.(*fuse.Stat_t), nil
 	}
 
 	v, err := sc.GetStatDirect(path)
@@ -120,24 +126,25 @@ func (sc *StatCache) GetStatDirect(path string) (*fuse.Stat_t, error) {
 	return v, nil
 }
 
+// RefreshStat value
+func (sc *StatCache) RefreshStat(path string) {
+	if v, err := sc.GetStatDirect(path); err != nil {
+		sc.PreCacheStat(path, v)
+	}
+}
+
 // PreCacheStat value
 func (sc *StatCache) PreCacheStat(path string, v *fuse.Stat_t) {
 	sc.setCache(path, v)
 }
 
 func (sc *StatCache) setCache(path string, v *fuse.Stat_t) {
-	sc.cacheLock.Lock()
-	defer sc.cacheLock.Unlock()
-	sc.cache[path] = v
+	sc.cache.Store(path, v)
 }
 
 // RemoveStatCache value
 func (sc *StatCache) RemoveStatCache(path string) {
-	sc.cacheLock.RLock()
-	defer sc.cacheLock.RUnlock()
-	if _, exist := sc.cache[path]; exist {
-		sc.cacheLock.Lock()
-		delete(sc.cache, path)
-		sc.cacheLock.Unlock()
-	}
+
+	sc.cache.Delete(path)
+
 }

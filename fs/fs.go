@@ -1,6 +1,7 @@
 package fs
 
 import (
+	"context"
 	"path/filepath"
 	"sync"
 	"time"
@@ -8,6 +9,7 @@ import (
 	"github.com/Soontao/hanafs/hana"
 	"github.com/billziss-gh/cgofuse/fuse"
 	"github.com/roylee0704/gron"
+	"golang.org/x/sync/semaphore"
 )
 
 // DefaultRemoteCacheSeconds duration
@@ -29,13 +31,63 @@ func (f *HanaFS) Open(path string, flags int) (errc int, fh uint64) {
 	return 0, 0
 }
 
-func (f *HanaFS) Create(path string, flags int, mode uint32) (int, uint64) {
+func (f *HanaFS) Mkdir(path string, mode uint32) (errc int) {
 	base, name := filepath.Split(path)
+
+	if err := f.client.Create(base, name, true); err != nil {
+		return -fuse.EIO
+	}
+
+	f.statCache.FileIsExistNow(path)
+
+	f.statCache.RefreshStat(path)
+
+	return 0
+}
+
+func (f *HanaFS) Fsync(path string, datasync bool, fh uint64) int {
+	return 0
+}
+
+func (f *HanaFS) Unlink(path string) (errc int) {
+
+	// remove file
+
+	if err := f.client.Delete(path); err != nil {
+		return -fuse.EIO
+	}
+
+	f.statCache.RemoveStatCache(path)
+
+	return 0
+}
+
+func (f *HanaFS) Rmdir(path string) (errc int) {
+
+	// remove directory
+
+	if err := f.client.Delete(path); err != nil {
+		return -fuse.EIO
+	}
+
+	f.statCache.RemoveStatCache(path)
+
+	return 0
+}
+
+func (f *HanaFS) Create(path string, flags int, mode uint32) (int, uint64) {
+
+	base, name := filepath.Split(path)
+
 	if err := f.client.Create(base, name, false); err != nil {
 		return -fuse.EIO, 0
 	}
+
 	f.statCache.FileIsExistNow(path)
+	f.statCache.RefreshStat(path)
+
 	return 0, 0
+
 }
 
 func (f *HanaFS) Write(path string, buff []byte, ofst int64, fh uint64) (n int) {
@@ -57,21 +109,31 @@ func (f *HanaFS) Write(path string, buff []byte, ofst int64, fh uint64) (n int) 
 		return -fuse.EFAULT
 	}
 
-	// write file
-	now := fuse.Now()
-	stat.Ctim = now
-	stat.Mtim = now
+	f.statCache.RefreshStat(path)
+
+	return 0
+}
+
+func (f *HanaFS) Truncate(path string, size int64, fh uint64) (errc int) {
+	// mac os/linux change the file size
 
 	return 0
 }
 
 func (f *HanaFS) Mknod(path string, mode uint32, dev uint64) (errc int) {
+
 	base, name := filepath.Split(path)
+
 	if err := f.client.Create(base, name, false); err != nil {
 		return -fuse.EIO
 	}
+
 	f.statCache.FileIsExistNow(path)
+
+	f.statCache.RefreshStat(path)
+
 	return 0
+
 }
 
 func (f *HanaFS) Readdir(path string,
@@ -125,6 +187,15 @@ func (f *HanaFS) Getattr(path string, s *fuse.Stat_t, fh uint64) int {
 
 }
 
+func (f *HanaFS) Setxattr(path string, name string, value []byte, flags int) (errc int) {
+	return 0
+}
+
+func (f *HanaFS) Getxattr(path string, name string) (errc int, xatr []byte) {
+	// mac os x attr
+	return -fuse.ENOATTR, nil
+}
+
 func (f *HanaFS) Read(path string, buff []byte, ofst int64, fh uint64) (n int) {
 	contents, err := f.client.ReadFile(path)
 
@@ -161,6 +232,11 @@ func (f *HanaFS) getDir(path string) (*Directory, error) {
 
 	wg := sync.WaitGroup{}
 
+	// limit request parallel counts
+	sem := semaphore.NewWeighted(30)
+
+	ctx := context.TODO()
+
 	for _, hanaChild := range dir.Children {
 
 		fsChildStat := &fuse.Stat_t{
@@ -168,9 +244,7 @@ func (f *HanaFS) getDir(path string) (*Directory, error) {
 			Flags: 0,
 			Uid:   uid,
 			Gid:   gid,
-			Ctim:  now,
 			Atim:  now,
-			Mtim:  now,
 		}
 
 		nodeName := hanaChild.Name
@@ -186,9 +260,10 @@ func (f *HanaFS) getDir(path string) (*Directory, error) {
 			if fsChildStat.Size == 0 {
 
 				go func(p string) {
+					sem.Acquire(ctx, 1)
+					defer sem.Release(1)
 
 					wg.Add(1)
-
 					defer wg.Done()
 
 					if content, err := f.client.ReadFile(p); err == nil {
@@ -227,9 +302,8 @@ func (f *HanaFS) getStat(path string) (*fuse.Stat_t, error) {
 	s.Nlink = 1
 	s.Gid = gid
 	s.Uid = uid
-	s.Ctim = now
 	s.Atim = now
-	s.Mtim = now // need use the real datetime
+	s.Mtim = *ToFuseTimeStamp(hanaStat.TimeStamp)
 
 	if hanaStat.Directory {
 		s.Mode = fuse.S_IFDIR | 0777
@@ -270,7 +344,7 @@ func NewHanaFS(client *hana.Client) *HanaFS {
 	fs := &HanaFS{client: client}
 
 	fs.statCache = &StatCache{
-		cache:    map[string]*fuse.Stat_t{},
+		cache:    &sync.Map{},
 		provider: fs.getStat,
 	}
 
