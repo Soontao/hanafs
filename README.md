@@ -10,7 +10,9 @@ Mount hana xs repository to local filesystem
 * [ ] Periodic refresh directory/file metadata (with deep directory metadata query)
 * [x] Read text/binary file content
 * [x] Create files
-* [ ] Write Data
+* [ ] Create directory
+* [ ] Correct timestamp & file size
+* [x] Write Data
 * [ ] Editing locks
 * [ ] Move/Rename file
 * [ ] Upload binary files (images/...)

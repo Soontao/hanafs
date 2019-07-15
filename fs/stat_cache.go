@@ -1,8 +1,8 @@
 package fs
 
 import (
+	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/billziss-gh/cgofuse/fuse"
 )
@@ -67,15 +67,49 @@ func (sc *StatCache) GetOrCacheStat(path string) (*fuse.Stat_t, error) {
 	if err != nil {
 		return nil, err
 	}
-	sc.PreStatCache(path, v)
+	sc.PreCacheStat(path, v)
 	return v, nil
+}
+
+// GetDirStats func, by prefix
+func (sc *StatCache) GetDirStats(path string) (rt *Directory) {
+	sc.cacheLock.RLock()
+	defer sc.cacheLock.RUnlock()
+
+	rt = &Directory{
+		children: map[string]*fuse.Stat_t{},
+	}
+
+	for cachedFilePath, stat := range sc.cache {
+
+		base, name := filepath.Split(cachedFilePath)
+		if base == path {
+			rt.children[name] = stat
+		}
+	}
+
+	return
 }
 
 // GetStat directly, if not exist, will retrive
 func (sc *StatCache) GetStat(path string) (*fuse.Stat_t, error) {
+
 	if v, exist := sc.cache[path]; exist {
 		return v, nil
 	}
+
+	v, err := sc.GetStatDirect(path)
+
+	if err != nil {
+		return nil, err
+	}
+
+	sc.PreCacheStat(path, v)
+	return v, nil
+}
+
+// GetStatDirect directly, without cache and pre-cache
+func (sc *StatCache) GetStatDirect(path string) (*fuse.Stat_t, error) {
 
 	v, err := sc.provider(path)
 
@@ -83,28 +117,14 @@ func (sc *StatCache) GetStat(path string) (*fuse.Stat_t, error) {
 		return nil, err
 	}
 
-	sc.PreStatCacheSeconds(path, v, DefaultRemoteCacheSeconds)
 	return v, nil
 }
 
-// PreStatCache value
-func (sc *StatCache) PreStatCache(path string, v *fuse.Stat_t) {
+// PreCacheStat value
+func (sc *StatCache) PreCacheStat(path string, v *fuse.Stat_t) {
 	sc.setCache(path, v)
 }
 
-// PreStatCacheSeconds value, remove value after seconds
-func (sc *StatCache) PreStatCacheSeconds(path string, v *fuse.Stat_t, second int) {
-
-	sc.setCache(path, v)
-
-	go func() {
-		time.Sleep(time.Second * time.Duration(second))
-		// refresh value
-		newV, _ := sc.provider(path)
-		sc.PreStatCacheSeconds(path, newV, second)
-	}()
-
-}
 func (sc *StatCache) setCache(path string, v *fuse.Stat_t) {
 	sc.cacheLock.Lock()
 	defer sc.cacheLock.Unlock()

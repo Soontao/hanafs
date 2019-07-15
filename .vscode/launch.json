@@ -11,6 +11,15 @@
       "mode": "auto",
       "program": "${workspaceFolder}/cli",
       "env": {},
+      "osx": {
+        "env": {
+          "HANA_USER": "btheo",
+          "HANA_PASSWORD": "Welcome2",
+          "HANA_TENANT": "poca31015082.hana.ondemand.com",
+          "MOUNT_PATH": "../../tmp/29hana",
+          "HANA_TENANT_BASE_PATH": "/public/dir2"
+        }
+      },
       "windows": {
         "env": {
           "CPATH": "C:\\Program Files (x86)\\WinFsp\\inc\\fuse",

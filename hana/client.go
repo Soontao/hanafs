@@ -211,6 +211,27 @@ func (c *Client) Create(base, name string, dir bool) error {
 	return nil
 }
 
+// WriteFileContent to hana
+func (c *Client) WriteFileContent(path string, content []byte) (err error) {
+
+	res, err := c.request(
+		"PUT",
+		c.formatDtFilePath(path),
+		content,
+	)
+
+	if err == nil && res.Response().StatusCode >= 300 {
+		err = errors.New(res.Response().Status)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+
+}
+
 // ReadDirectory information
 func (c *Client) ReadDirectory(filePath string) (*DirectoryDetail, error) {
 

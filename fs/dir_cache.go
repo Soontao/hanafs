@@ -1,49 +1,116 @@
 package fs
 
 import (
+	"path/filepath"
 	"sync"
-	"time"
 
+	"github.com/Soontao/hanafs/hana"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
-type CachedDirectory struct {
+// Directory type
+type Directory struct {
 	children map[string]*fuse.Stat_t
 }
 
+// DirectoryCache type
 type DirectoryCache struct {
-	cache     map[string]*CachedDirectory
-	provider  func(string) (*CachedDirectory, error)
+	cache     map[string]*Directory
+	provider  func(string) (*Directory, error)
+	statCache *StatCache
 	cacheLock sync.RWMutex
 }
 
-// GetDir directly, if not exist, will retrive and cache it
-func (sc *DirectoryCache) GetDir(path string) (*CachedDirectory, error) {
-	if v, exist := sc.cache[path]; exist {
-		return v, nil
+// RefreshCache values
+func (sc *DirectoryCache) RefreshCache() {
+
+	wg := sync.WaitGroup{}
+
+	// each directory will update in parallel
+
+	for name := range sc.cache {
+		go func(n string) {
+			wg.Add(1)
+			defer wg.Done()
+			v, err := sc.GetDirDirect(n)
+			if err != nil {
+				if err == hana.ErrFileNotFound {
+					sc.RemoveDirectoryCache(n)
+				}
+				// log error
+
+				return
+			}
+
+			// update file stat caches
+			sc.PreCacheDirectory(n, v)
+
+		}(name)
 	}
-	v, err := sc.provider(path)
+
+	// wait all goroutines finished
+	wg.Wait()
+
+	return
+}
+
+// GetDir directly, if not exist, will retrive and cache it
+func (sc *DirectoryCache) GetDir(path string) (*Directory, error) {
+
+	if _, exist := sc.cache[path]; exist {
+		return sc.statCache.GetDirStats(path), nil
+	}
+
+	v, err := sc.GetDirDirect(path)
+
 	if err != nil {
 		return nil, err
 	}
-	sc.PreDirectoryCacheSeconds(path, v, DefaultRemoteCacheSeconds)
+
+	sc.PreCacheDirectory(path, v)
+
 	return v, nil
 }
 
-// PreDirectoryCacheSeconds value, remove value after seconds
-func (sc *DirectoryCache) PreDirectoryCacheSeconds(path string, v *CachedDirectory, second int) {
+// GetDirDirect func, without cache & pre cache
+func (sc *DirectoryCache) GetDirDirect(path string) (*Directory, error) {
+
+	v, err := sc.provider(path)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return v, nil
+
+}
+
+// PreCacheDirectory value, will not remove
+func (sc *DirectoryCache) PreCacheDirectory(path string, v *Directory) {
+	if len(path) == 0 {
+		path = "/"
+	}
 
 	sc.setCache(path, v)
 
-	go func() {
-		time.Sleep(time.Second * time.Duration(second))
-		// refresh value
-		newV, _ := sc.provider(path)
-		sc.PreDirectoryCacheSeconds(path, newV, second)
-	}()
+	for nodeName, nodeStat := range v.children {
+
+		nodePath := filepath.Join(path, nodeName)
+
+		sc.statCache.FileIsExistNow(nodePath)
+		sc.statCache.PreCacheStat(nodePath, nodeStat)
+
+		unixTerminalCheckFile := filepath.Join(path, "._"+nodeName)
+
+		if _, exist := v.children[unixTerminalCheckFile]; !exist {
+			sc.statCache.AddNotExistFileCache(unixTerminalCheckFile)
+		}
+
+	}
 
 }
-func (sc *DirectoryCache) setCache(path string, v *CachedDirectory) {
+
+func (sc *DirectoryCache) setCache(path string, v *Directory) {
 	sc.cacheLock.Lock()
 	defer sc.cacheLock.Unlock()
 	sc.cache[path] = v
