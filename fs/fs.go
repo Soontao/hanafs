@@ -1,7 +1,6 @@
 package fs
 
 import (
-	"context"
 	"path/filepath"
 	"sync"
 	"time"
@@ -9,18 +8,16 @@ import (
 	"github.com/Soontao/hanafs/hana"
 	"github.com/billziss-gh/cgofuse/fuse"
 	"github.com/roylee0704/gron"
-	"golang.org/x/sync/semaphore"
 )
 
 // DefaultRemoteCacheSeconds duration
-const DefaultRemoteCacheSeconds = 5
+const DefaultRemoteCacheSeconds = 15
 
 // HanaFS type
 type HanaFS struct {
 	fuse.FileSystemBase
 	client    *hana.Client
 	statCache *StatCache
-	dirCache  *DirectoryCache
 }
 
 func (f *HanaFS) Release(path string, fh uint64) int {
@@ -90,6 +87,23 @@ func (f *HanaFS) Create(path string, flags int, mode uint32) (int, uint64) {
 
 }
 
+func (f *HanaFS) Utimens(path string, tmsp []fuse.Timespec) (errc int) {
+
+	stat := &fuse.Stat_t{}
+	err := f.Getattr(path, stat, 0)
+
+	if err != 0 {
+		return -fuse.ENOENT
+	}
+
+	if tmsp != nil {
+		stat.Atim = tmsp[0]
+		stat.Mtim = tmsp[1]
+	}
+
+	return 0
+}
+
 func (f *HanaFS) Write(path string, buff []byte, ofst int64, fh uint64) (n int) {
 
 	stat := &fuse.Stat_t{}
@@ -141,23 +155,27 @@ func (f *HanaFS) Readdir(path string,
 	ofst int64,
 	fh uint64) int {
 
-	dir, err := f.dirCache.GetDir(path)
+	dir, err := f.statCache.GetDir(path)
 
 	if err != nil {
 		return -fuse.ENOENT
 	}
 
-	for name, childStat := range dir.children {
-		if len(name) == 0 {
-			continue
+	dir.children.Range(func(key interface{}, value interface{}) bool {
+		name := key.(string)
+		st := value.(*fuse.Stat_t)
+
+		if len(name) > 0 {
+			if st.Uid == 0 {
+				uid, gid, _ := fuse.Getcontext()
+				st.Uid = uid
+				st.Gid = gid
+			}
+			fill(name, st, 0)
 		}
-		if childStat.Uid == 0 {
-			uid, gid, _ := fuse.Getcontext()
-			childStat.Uid = uid
-			childStat.Gid = gid
-		}
-		fill(name, childStat, 0)
-	}
+
+		return true
+	})
 
 	return 0
 }
@@ -220,64 +238,36 @@ func (f *HanaFS) Read(path string, buff []byte, ofst int64, fh uint64) (n int) {
 
 func (f *HanaFS) getDir(path string) (*Directory, error) {
 
-	rt := &Directory{children: map[string]*fuse.Stat_t{}}
+	path = normalizePath(path)
+
+	rt := &Directory{children: &sync.Map{}}
 	dir, err := f.client.ReadDirectory(path)
 
 	if err != nil {
 		return nil, err
 	}
 
-	now := fuse.Now()
-	uid, gid, _ := fuse.Getcontext()
-
 	wg := sync.WaitGroup{}
 
-	// limit request parallel counts
-	sem := semaphore.NewWeighted(30)
-
-	ctx := context.TODO()
-
 	for _, hanaChild := range dir.Children {
-
-		fsChildStat := &fuse.Stat_t{
-			Nlink: 1,
-			Flags: 0,
-			Uid:   uid,
-			Gid:   gid,
-			Atim:  now,
-		}
 
 		nodeName := hanaChild.Name
 
 		nodePath := filepath.Join(path, nodeName)
 
-		// parallel requested
-		if hanaChild.Directory {
-			fsChildStat.Mode = fuse.S_IFDIR | 0777
-		} else {
-			fsChildStat.Mode = fuse.S_IFREG | 0777 // Regular File.
+		go func(s string) {
+			wg.Add(1)
+			defer wg.Done()
+			st, err := f.getStat(s)
 
-			if fsChildStat.Size == 0 {
+			if err != nil {
 
-				go func(p string) {
-					sem.Acquire(ctx, 1)
-					defer sem.Release(1)
-
-					wg.Add(1)
-					defer wg.Done()
-
-					if content, err := f.client.ReadFile(p); err == nil {
-						fsChildStat.Size = int64(len(content))
-					} else {
-						// log error
-					}
-
-				}(nodePath)
-
+				// log error
+				return
 			}
-		}
+			rt.children.Store(s, st)
 
-		rt.children[nodeName] = fsChildStat
+		}(nodePath)
 
 	}
 
@@ -288,6 +278,8 @@ func (f *HanaFS) getDir(path string) (*Directory, error) {
 }
 
 func (f *HanaFS) getStat(path string) (*fuse.Stat_t, error) {
+
+	path = normalizePath(path)
 
 	s := &fuse.Stat_t{}
 	hanaStat, err := f.client.Stat(path)
@@ -344,18 +336,13 @@ func NewHanaFS(client *hana.Client) *HanaFS {
 	fs := &HanaFS{client: client}
 
 	fs.statCache = &StatCache{
-		cache:    &sync.Map{},
-		provider: fs.getStat,
-	}
-
-	fs.dirCache = &DirectoryCache{
-		cache:     map[string]*Directory{},
-		provider:  fs.getDir,
-		statCache: fs.statCache,
+		cache:       &sync.Map{},
+		provider:    fs.getStat,
+		dirProvider: fs.getDir,
 	}
 
 	cron.AddFunc(gron.Every(DefaultRemoteCacheSeconds*time.Second), func() {
-		fs.dirCache.RefreshCache()
+		fs.statCache.RefreshCache()
 	})
 
 	cron.Start()

@@ -316,7 +316,6 @@ func (c *Client) Stat(filePath string) (*PathStat, error) {
 		rt.Hidden = dir.Attributes.Hidden
 		rt.ReadOnly = dir.Attributes.ReadOnly
 		rt.SymbolicLink = dir.Attributes.SymbolicLink
-		rt.TimeStamp = dir.LocalTimeStamp
 
 	} else {
 		f := &File{}
@@ -333,7 +332,7 @@ func (c *Client) Stat(filePath string) (*PathStat, error) {
 		rt.SymbolicLink = f.Attributes.SymbolicLink
 		rt.Activated = f.Attributes.SapBackPack.Activated
 
-		rt.TimeStamp = f.LocalTimeStamp
+		rt.TimeStamp = f.SapBackPack.ActivatedAt
 
 	}
 

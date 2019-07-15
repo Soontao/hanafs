@@ -1,6 +1,8 @@
 package fs
 
 import (
+	"strings"
+
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
@@ -12,4 +14,9 @@ func ToFuseTimeStamp(timestamp int64) *fuse.Timespec {
 		Nsec: 0,
 	}
 
+}
+
+func normalizePath(p string) string {
+	// normalize path with windows
+	return strings.ReplaceAll(strings.ReplaceAll(p, "\\", "/"), "\\/", "/")
 }
