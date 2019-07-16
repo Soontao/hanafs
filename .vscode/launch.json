@@ -14,7 +14,6 @@
       "osx": {
         "env": {
           "HANA_USER": "btheo",
-          "HANA_PASSWORD": "Welcome2",
           "HANA_TENANT": "poca31015082.hana.ondemand.com",
           "HANA_TENANT_BASE_PATH": "/public/dir2",
           "MOUNT_PATH": "../../tmp/33hana"
