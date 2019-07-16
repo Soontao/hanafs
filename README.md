@@ -5,7 +5,7 @@ Mount hana xs repository to local filesystem
 ## Features
 
 * [x] Connect to hana repository, auth and fetch token
-* [x] Read directory & file metadata
+* [x] Read directory/file metadata
 * [x] Cache directory/file metadata
 * [x] Periodic refresh directory/file metadata
 * [x] Read text/binary file content
