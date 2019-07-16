@@ -113,7 +113,7 @@ func appAction(c *cli.Context) (err error) {
 
 	fs.SetCapReaddirPlus(true)
 
-	fs.Mount(mountpoint, []string{"-d"})
+	fs.Mount(mountpoint, []string{})
 
 	return err
 

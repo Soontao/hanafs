@@ -5,6 +5,7 @@ go 1.12
 require (
 	github.com/billziss-gh/cgofuse v1.1.0
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/google/martian v2.1.0+incompatible
 	github.com/imroc/req v0.2.4
 	github.com/roylee0704/gron v0.0.0-20160621042432-e78485adab46
 	github.com/stretchr/testify v1.3.0 // indirect

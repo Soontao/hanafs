@@ -12,8 +12,12 @@ Mount hana xs repository to local filesystem
 * [x] Create files
 * [x] Create directory
 * [x] Correct timestamp & file size
-* [x] Write Data
+* [x] Write data to file
 * [ ] Editing locks
 * [ ] Move/Rename file
+* [ ] Debug info
+* [ ] Performance
 * [ ] Upload binary files (images/...)
 * [ ] Build executable binaries for windows/osx/linux
+* [ ] CI
+* [ ] Documentation & presentation

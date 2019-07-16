@@ -17,6 +17,9 @@ func ToFuseTimeStamp(timestamp int64) *fuse.Timespec {
 }
 
 func normalizePath(p string) string {
+	if len(p) == 0 {
+		p = "/"
+	}
 	// normalize path with windows
 	return strings.ReplaceAll(strings.ReplaceAll(p, "\\", "/"), "\\/", "/")
 }

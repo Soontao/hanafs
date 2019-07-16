@@ -125,7 +125,8 @@ func (f *HanaFS) Write(path string, buff []byte, ofst int64, fh uint64) (n int) 
 
 	f.statCache.RefreshStat(path)
 
-	return 0
+	// return length of write data
+	return len(buff)
 }
 
 func (f *HanaFS) Truncate(path string, size int64, fh uint64) (errc int) {
@@ -254,20 +255,17 @@ func (f *HanaFS) getDir(path string) (*Directory, error) {
 		nodeName := hanaChild.Name
 
 		nodePath := filepath.Join(path, nodeName)
+		wg.Add(1)
 
-		go func(s string) {
-			wg.Add(1)
+		go func(s, p string) {
 			defer wg.Done()
-			st, err := f.getStat(s)
+			st, err := f.getStat(p)
 
 			if err != nil {
-
-				// log error
 				return
 			}
 			rt.children.Store(s, st)
-
-		}(nodePath)
+		}(nodeName, nodePath)
 
 	}
 
@@ -341,9 +339,12 @@ func NewHanaFS(client *hana.Client) *HanaFS {
 		dirProvider: fs.getDir,
 	}
 
-	cron.AddFunc(gron.Every(DefaultRemoteCacheSeconds*time.Second), func() {
-		fs.statCache.RefreshCache()
-	})
+	// Retrieve root dir directly at startup
+	fs.statCache.GetDir("/")
+	// refresh first and sub directory at startup
+	fs.statCache.RefreshCache()
+
+	cron.AddFunc(gron.Every(DefaultRemoteCacheSeconds*time.Second), fs.statCache.RefreshCache)
 
 	cron.Start()
 

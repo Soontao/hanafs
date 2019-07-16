@@ -63,6 +63,12 @@ func isCSRFTokenError(response *http.Response) bool {
 		strings.ToLower(response.Header.Get(keyCSRFTokenHeader)) == valueRequired)
 }
 
+// Rename file or move file
+func (c *Client) Rename(old, new string, dir bool) (err error) {
+
+	return
+}
+
 func (c *Client) request(method, path string, infos ...interface{}) (*req.Resp, error) {
 
 	// format url

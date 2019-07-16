@@ -1,6 +1,7 @@
 package fs
 
 import (
+	"log"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -90,6 +91,10 @@ func (sc *StatCache) GetDirStats(path string) (rt *Directory) {
 
 		base, name := filepath.Split(key.(string))
 
+		if len(base) > 1 {
+			base = strings.TrimRight(base, "/")
+		}
+
 		if base == path {
 			rt.children.Store(name, value)
 		}
@@ -142,9 +147,10 @@ func (sc *StatCache) RefreshCache() {
 
 		if (stat.Mode & fuse.S_IFMT) == fuse.S_IFDIR {
 
+			wg.Add(1)
+
 			go func(n string) {
 
-				wg.Add(1)
 				defer wg.Done()
 				v, err := sc.GetDirDirect(n)
 
@@ -153,6 +159,7 @@ func (sc *StatCache) RefreshCache() {
 						sc.RemoveStatCache(n)
 						sc.AddNotExistFileCache(n)
 					}
+					log.Println(err)
 					// log error
 					return
 				}
@@ -175,9 +182,7 @@ func (sc *StatCache) RefreshCache() {
 // PreCacheDirectory value, will not remove
 func (sc *StatCache) PreCacheDirectory(path string, v *Directory) {
 
-	if len(path) == 0 {
-		path = "/"
-	}
+	path = normalizePath(path)
 
 	v.children.Range(func(key interface{}, value interface{}) bool {
 
@@ -188,6 +193,7 @@ func (sc *StatCache) PreCacheDirectory(path string, v *Directory) {
 
 		sc.FileIsExistNow(nodePath)
 		sc.PreCacheStat(nodePath, st)
+
 		unixTerminalCheckFile := "._" + nodeName
 		unixTerminalCheckFilePath := filepath.Join(path, unixTerminalCheckFile)
 
