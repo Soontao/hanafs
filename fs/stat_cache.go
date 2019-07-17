@@ -18,6 +18,7 @@ type StatCache struct {
 	provider    func(string) (*fuse.Stat_t, error)
 	dirProvider func(string) (*Directory, error)
 	cacheLock   sync.RWMutex
+	refreshLock sync.Mutex
 	notExist    []string
 }
 
@@ -42,20 +43,28 @@ func (sc *StatCache) AddNotExistFileCache(path string) {
 		sc.notExist = append(sc.notExist, path)
 	}
 
+	// remove from cache
+	sc.cache.Delete(path)
+
 }
 
 // FileIsExistNow to remove un-existed cache
 func (sc *StatCache) FileIsExistNow(path string) {
 
 	if sc.CheckIfFileNotExist(path) {
+
 		sc.cacheLock.Lock()
 		defer sc.cacheLock.Unlock()
+
 		for i, notExistPath := range sc.notExist {
+
 			if notExistPath == path {
 				sc.notExist = append(sc.notExist[:i], sc.notExist[i+1:]...)
 				break
 			}
+
 		}
+
 	}
 
 }
@@ -134,7 +143,10 @@ func (sc *StatCache) GetStatDirect(path string) (*fuse.Stat_t, error) {
 	return v, nil
 }
 
+// RefreshCache stats
 func (sc *StatCache) RefreshCache() {
+	sc.refreshLock.Lock()
+	defer sc.refreshLock.Unlock()
 
 	wg := sync.WaitGroup{}
 

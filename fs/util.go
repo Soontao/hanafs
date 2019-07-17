@@ -23,3 +23,7 @@ func normalizePath(p string) string {
 	// normalize path with windows
 	return strings.ReplaceAll(strings.ReplaceAll(p, "\\", "/"), "\\/", "/")
 }
+
+func isDir(mode uint32) bool {
+	return (mode & fuse.S_IFMT) == fuse.S_IFDIR
+}

@@ -181,6 +181,26 @@ func (f *HanaFS) Readdir(path string,
 	return 0
 }
 
+func (f *HanaFS) Rename(oldpath string, newpath string) (errc int) {
+	stat, err := f.statCache.GetStat(oldpath)
+
+	if err != nil {
+		return -fuse.ENOENT
+	}
+
+	err = f.client.Rename(oldpath, newpath, isDir(stat.Mode))
+
+	if err != nil {
+		// log error here
+		return -fuse.ENOENT
+	}
+
+	f.statCache.AddNotExistFileCache(oldpath)
+	f.statCache.FileIsExistNow(newpath)
+
+	return 0
+}
+
 func (f *HanaFS) Getattr(path string, s *fuse.Stat_t, fh uint64) int {
 
 	if f.statCache.CheckIfFileNotExist(path) {

@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -65,6 +66,40 @@ func isCSRFTokenError(response *http.Response) bool {
 
 // Rename file or move file
 func (c *Client) Rename(old, new string, dir bool) (err error) {
+	// only support rename
+	// if users want to move from directory to another, maybe a delete & create walkaround required.
+
+	oldPath, oldName := filepath.Split(old)
+	newPath, newName := filepath.Split(new)
+
+	if oldPath != newPath {
+		return ErrOpNotAllowed
+	}
+
+	if oldName == newName {
+		return
+	}
+
+	payload := map[string]interface{}{
+		// old file location
+		"Location": c.formatDtFilePath(old),
+		"Target":   newName,
+	}
+
+	header := req.Header{
+		keyContentType:     "application/json;charset=UTF-8",
+		"X-Create-Options": "move,no-overwrite",
+	}
+
+	res, err := c.request("POST", c.formatDtFilePath(oldPath), req.BodyJSON(&payload), header)
+
+	if err != nil {
+		return err
+	}
+
+	if res.Response().StatusCode != 201 {
+		return ErrOpNotAllowed
+	}
 
 	return
 }
