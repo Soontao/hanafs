@@ -34,7 +34,7 @@ func (sc *StatCache) UIHaveOpenResource(path string) {
 		log.Printf("open resource: %v", path)
 		sc.openResource.Store(path, true)
 		sc.RefreshStat(path)
-		if stat, err := sc.GetStat(path); err != nil && isDir(stat.Mode) {
+		if stat, err := sc.GetStat(path); err == nil && isDir(stat.Mode) {
 			sc.RefreshDir(path)
 		}
 	}
@@ -172,12 +172,24 @@ func (sc *StatCache) GetStatDirect(path string) (*fuse.Stat_t, error) {
 
 	v, err := sc.statProvider(path)
 
-	if c, exist := sc.cache.Load(path); exist {
+	if err != nil {
+		return nil, err
+	}
 
-		currentStat := c.(*fuse.Stat_t)
+	if !isDir(v.Mode) {
 
-		// if changed, retrive the new size
-		if sc.IsOpenedDirectoryFile(path) && currentStat.Mtim.Sec != v.Mtim.Sec {
+		if c, exist := sc.cache.Load(path); exist {
+
+			currentStat := c.(*fuse.Stat_t)
+
+			// if changed, retrive the new size
+			if sc.IsOpenedDirectoryFile(path) && currentStat.Mtim.Sec != v.Mtim.Sec {
+				v.Size = sc.fileSizeProvider(path)
+			} else {
+				v.Size = currentStat.Size
+			}
+
+		} else {
 			v.Size = sc.fileSizeProvider(path)
 		}
 
@@ -224,7 +236,8 @@ func (sc *StatCache) RefreshCache() {
 
 		stat := value.(*fuse.Stat_t)
 
-		if isDir(stat.Mode) {
+		// only refresh directory when user opened its parent
+		if isDir(stat.Mode) && sc.IsOpenedDirectoryFile(name) {
 
 			wg.Add(1)
 

@@ -287,11 +287,13 @@ func (f *HanaFS) getDir(path string) (*Directory, error) {
 		go func(s, p string) {
 
 			defer wg.Done()
-			st, err := f.getStat(p)
+			st, err := f.statCache.GetStatDirect(p)
 
 			if err != nil {
+				// log error
 				return
 			}
+
 			rt.children.Store(s, st)
 
 		}(nodeName, nodePath)
