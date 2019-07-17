@@ -3,6 +3,7 @@ module github.com/Soontao/hanafs
 go 1.12
 
 require (
+	github.com/Jeffail/tunny v0.0.0-20181108205650-4921fff29480
 	github.com/billziss-gh/cgofuse v1.1.0
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/google/martian v2.1.0+incompatible

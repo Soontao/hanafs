@@ -1,3 +1,5 @@
+github.com/Jeffail/tunny v0.0.0-20181108205650-4921fff29480 h1:pTK5nW0J4B2IlU9RjSoJMC+tgu+CQI6obTlgsdiznpQ=
+github.com/Jeffail/tunny v0.0.0-20181108205650-4921fff29480/go.mod h1:BX3q3G70XX0UmIkDWfDHoDRquDS1xFJA5VTbMf+14wM=
 github.com/billziss-gh/cgofuse v1.1.0 h1:tATn9ZDvuPcOVlvR4tJitGHgAqy1y18+4mKmRfdfjec=
 github.com/billziss-gh/cgofuse v1.1.0/go.mod h1:LJjoaUojlVjgo5GQoEJTcJNqZJeRU0nCR84CyxKt2YM=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

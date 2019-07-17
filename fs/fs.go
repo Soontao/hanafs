@@ -21,10 +21,17 @@ type HanaFS struct {
 }
 
 func (f *HanaFS) Release(path string, fh uint64) int {
+	f.statCache.UIHaveOpenResource(path)
 	return 0
 }
 
 func (f *HanaFS) Open(path string, flags int) (errc int, fh uint64) {
+	f.statCache.UIHaveOpenResource(path)
+	return 0, 0
+}
+
+func (f *HanaFS) Opendir(path string) (int, uint64) {
+	f.statCache.UIHaveOpenResource(path)
 	return 0, 0
 }
 
@@ -278,6 +285,7 @@ func (f *HanaFS) getDir(path string) (*Directory, error) {
 		wg.Add(1)
 
 		go func(s, p string) {
+
 			defer wg.Done()
 			st, err := f.getStat(p)
 
@@ -285,6 +293,7 @@ func (f *HanaFS) getDir(path string) (*Directory, error) {
 				return
 			}
 			rt.children.Store(s, st)
+
 		}(nodeName, nodePath)
 
 	}
@@ -295,11 +304,17 @@ func (f *HanaFS) getDir(path string) (*Directory, error) {
 	return rt, nil
 }
 
+func (f *HanaFS) getFileSize(path string) (rt int64) {
+	if content, err := f.client.ReadFile(path); err == nil {
+		rt = int64(len(content))
+	}
+	return
+}
+
 func (f *HanaFS) getStat(path string) (*fuse.Stat_t, error) {
 
 	path = normalizePath(path)
 
-	s := &fuse.Stat_t{}
 	hanaStat, err := f.client.Stat(path)
 
 	if err != nil {
@@ -307,23 +322,22 @@ func (f *HanaFS) getStat(path string) (*fuse.Stat_t, error) {
 	}
 
 	now := fuse.Now()
+
 	uid, gid, _ := fuse.Getcontext()
 
-	s.Nlink = 1
-	s.Gid = gid
-	s.Uid = uid
-	s.Atim = now
-	s.Mtim = *ToFuseTimeStamp(hanaStat.TimeStamp)
+	s := &fuse.Stat_t{
+		Nlink: 1,
+		Gid:   gid,
+		Uid:   uid,
+		Atim:  now,
+		Mtim:  *ToFuseTimeStamp(hanaStat.TimeStamp),
+		Size:  0,
+	}
 
 	if hanaStat.Directory {
 		s.Mode = fuse.S_IFDIR | 0777
 	} else {
 		s.Mode = fuse.S_IFREG | 0777 // Regular File.
-		if s.Size == 0 {
-			if content, err := f.client.ReadFile(path); err == nil {
-				s.Size = int64(len(content))
-			}
-		}
 	}
 
 	return s, nil
@@ -354,14 +368,18 @@ func NewHanaFS(client *hana.Client) *HanaFS {
 	fs := &HanaFS{client: client}
 
 	fs.statCache = &StatCache{
-		cache:       &sync.Map{},
-		provider:    fs.getStat,
-		dirProvider: fs.getDir,
+		cache:            &sync.Map{},
+		statProvider:     fs.getStat,
+		dirProvider:      fs.getDir,
+		fileSizeProvider: fs.getFileSize,
+		openResource:     &sync.Map{},
 	}
 
 	// Retrieve root dir directly at startup
 	fs.statCache.GetDir("/")
 	// refresh first and sub directory at startup
+	fs.statCache.RefreshCache()
+	// refresh sub sub dir
 	fs.statCache.RefreshCache()
 
 	cron.AddFunc(gron.Every(DefaultRemoteCacheSeconds*time.Second), fs.statCache.RefreshCache)

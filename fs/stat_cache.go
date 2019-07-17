@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Jeffail/tunny"
 	"github.com/Soontao/hanafs/hana"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
@@ -14,12 +15,47 @@ import (
 //
 // in memory stat cache
 type StatCache struct {
-	cache       *sync.Map
-	provider    func(string) (*fuse.Stat_t, error)
-	dirProvider func(string) (*Directory, error)
-	cacheLock   sync.RWMutex
-	refreshLock sync.Mutex
-	notExist    []string
+	cache            *sync.Map
+	openResource     *sync.Map
+	statProvider     func(string) (*fuse.Stat_t, error)
+	dirProvider      func(string) (*Directory, error)
+	fileSizeProvider func(string) int64
+	cacheLock        sync.RWMutex
+	refreshLock      sync.Mutex
+	notExist         []string
+}
+
+// UIHaveOpenResource means the resource should be refresh
+func (sc *StatCache) UIHaveOpenResource(path string) {
+
+	_, opened := sc.openResource.Load(path)
+
+	if !opened {
+		log.Printf("open resource: %v", path)
+		sc.openResource.Store(path, true)
+		sc.RefreshStat(path)
+		if stat, err := sc.GetStat(path); err != nil && isDir(stat.Mode) {
+			sc.RefreshDir(path)
+		}
+	}
+
+}
+
+// IsOpenedDirectoryFile data
+func (sc *StatCache) IsOpenedDirectoryFile(path string) (rt bool) {
+
+	path = normalizePath(path)
+
+	dir, _ := filepath.Split(path)
+
+	if len(dir) > 1 {
+		dir = strings.TrimRight(dir, "/")
+	}
+
+	_, rt = sc.openResource.Load(dir)
+
+	return
+
 }
 
 // CheckIfFileNotExist from cache
@@ -134,7 +170,18 @@ func (sc *StatCache) GetStat(path string) (*fuse.Stat_t, error) {
 // GetStatDirect directly, without cache and pre-cache
 func (sc *StatCache) GetStatDirect(path string) (*fuse.Stat_t, error) {
 
-	v, err := sc.provider(path)
+	v, err := sc.statProvider(path)
+
+	if c, exist := sc.cache.Load(path); exist {
+
+		currentStat := c.(*fuse.Stat_t)
+
+		// if changed, retrive the new size
+		if sc.IsOpenedDirectoryFile(path) && currentStat.Mtim.Sec != v.Mtim.Sec {
+			v.Size = sc.fileSizeProvider(path)
+		}
+
+	}
 
 	if err != nil {
 		return nil, err
@@ -150,6 +197,26 @@ func (sc *StatCache) RefreshCache() {
 
 	wg := sync.WaitGroup{}
 
+	// limit request concurrent
+	pool := tunny.NewFunc(30, func(in interface{}) interface{} {
+
+		n := in.(string)
+		dir, err := sc.GetDirDirect(n)
+
+		if err != nil {
+			if err == hana.ErrFileNotFound {
+				sc.RemoveStatCache(n)
+				sc.AddNotExistFileCache(n)
+			}
+			log.Println(err)
+			// log error
+			return nil
+		}
+
+		return dir
+
+	})
+
 	// each directory will update in parallel
 	sc.cache.Range(func(key interface{}, value interface{}) bool {
 
@@ -157,27 +224,22 @@ func (sc *StatCache) RefreshCache() {
 
 		stat := value.(*fuse.Stat_t)
 
-		if (stat.Mode & fuse.S_IFMT) == fuse.S_IFDIR {
+		if isDir(stat.Mode) {
 
 			wg.Add(1)
 
 			go func(n string) {
 
 				defer wg.Done()
-				v, err := sc.GetDirDirect(n)
 
-				if err != nil {
-					if err == hana.ErrFileNotFound {
-						sc.RemoveStatCache(n)
-						sc.AddNotExistFileCache(n)
-					}
-					log.Println(err)
-					// log error
-					return
+				log.Printf("refresh data for: %v", n)
+
+				pValue := pool.Process(n)
+
+				if pValue != nil {
+					// update file stat caches
+					sc.PreCacheDirectory(n, pValue.(*Directory))
 				}
-
-				// update file stat caches
-				sc.PreCacheDirectory(n, v)
 
 			}(name)
 		}
@@ -249,8 +311,16 @@ func (sc *StatCache) GetDirDirect(path string) (*Directory, error) {
 
 }
 
+// RefreshDir and item stats
+func (sc *StatCache) RefreshDir(path string) {
+	if dir, err := sc.GetDirDirect(path); err != nil {
+		sc.PreCacheDirectory(path, dir)
+	}
+}
+
 // RefreshStat value
 func (sc *StatCache) RefreshStat(path string) {
+	log.Printf("refresh stat: %v", path)
 	if v, err := sc.GetStatDirect(path); err != nil {
 		sc.PreCacheStat(path, v)
 	}

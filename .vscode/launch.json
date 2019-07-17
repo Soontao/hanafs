@@ -15,8 +15,8 @@
         "env": {
           "HANA_USER": "btheo",
           "HANA_TENANT": "poca31015082.hana.ondemand.com",
-          "HANA_TENANT_BASE_PATH": "/public/dir2",
-          "MOUNT_PATH": "../../tmp/50hana"
+          "HANA_TENANT_BASE_PATH": "/",
+          "MOUNT_PATH": "../../tmp/poc22"
         }
       },
       "windows": {

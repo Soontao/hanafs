@@ -133,6 +133,7 @@ func (c *Client) request(method, path string, infos ...interface{}) (*req.Resp, 
 			// re process request
 			resp, err = c.req.Do(method, url, infos...)
 		}
+
 		response := resp.Response()
 
 		switch {
