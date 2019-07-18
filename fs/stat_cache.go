@@ -15,14 +15,13 @@ import (
 //
 // in memory stat cache
 type StatCache struct {
-	cache            *sync.Map
-	openResource     *sync.Map
-	statProvider     func(string) (*fuse.Stat_t, error)
-	dirProvider      func(string) (*Directory, error)
-	fileSizeProvider func(string) int64
+	cache            *ConcurrentMap
+	openResource     *ConcurrentMap
+	statProvider     StatProvider
+	dirProvider      DirectoryProvider
+	fileSizeProvider FileSizeProvider
 	cacheLock        sync.RWMutex
 	refreshLock      sync.Mutex
-	notExist         []string
 }
 
 // UIHaveOpenResource means the resource should be refresh
@@ -34,8 +33,26 @@ func (sc *StatCache) UIHaveOpenResource(path string) {
 		log.Printf("open resource: %v", path)
 		sc.openResource.Store(path, true)
 		sc.RefreshStat(path)
+
+		// if opened resource is dir, preload sub dir of the dir
 		if stat, err := sc.GetStat(path); err == nil && isDir(stat.Mode) {
+
 			sc.RefreshDir(path)
+
+			if d, e := sc.GetDir(path); e == nil && d != nil {
+				d.children.Range(func(key interface{}, value interface{}) bool {
+					if value != nil {
+						stat := value.(*fuse.Stat_t)
+						if isDir(stat.Mode) {
+							subDirPath := filepath.Join(path, key.(string))
+							sc.RefreshDir(subDirPath)
+						}
+					}
+					return true
+				})
+
+			}
+
 		}
 	}
 
@@ -58,51 +75,32 @@ func (sc *StatCache) IsOpenedDirectoryFile(path string) (rt bool) {
 
 }
 
-// CheckIfFileNotExist from cache
+func (sc *StatCache) cacheRangeAll(f func(path string, stat *fuse.Stat_t)) {
+	sc.cache.Range(func(key interface{}, value interface{}) bool {
+		p := key.(string)
+		s := value.(*fuse.Stat_t)
+		f(p, s)
+		return true
+	})
+}
+
+// CheckIfFileNotExist from cache, return true if not exist
 func (sc *StatCache) CheckIfFileNotExist(path string) (rt bool) {
-	sc.cacheLock.RLock()
-	defer sc.cacheLock.RUnlock()
-	for _, f := range sc.notExist {
-		if f == path {
-			return true
-		}
-	}
-	return false
+	_, exist := sc.cache.Load(path)
+	return !exist
 }
 
 // AddNotExistFileCache to cache
 func (sc *StatCache) AddNotExistFileCache(path string) {
-
-	if !sc.CheckIfFileNotExist(path) {
-		sc.cacheLock.Lock()
-		defer sc.cacheLock.Unlock()
-		sc.notExist = append(sc.notExist, path)
-	}
-
 	// remove from cache
 	sc.cache.Delete(path)
-
 }
 
 // FileIsExistNow to remove un-existed cache
 func (sc *StatCache) FileIsExistNow(path string) {
-
-	if sc.CheckIfFileNotExist(path) {
-
-		sc.cacheLock.Lock()
-		defer sc.cacheLock.Unlock()
-
-		for i, notExistPath := range sc.notExist {
-
-			if notExistPath == path {
-				sc.notExist = append(sc.notExist[:i], sc.notExist[i+1:]...)
-				break
-			}
-
-		}
-
+	if !sc.CheckIfFileNotExist(path) {
+		sc.RefreshStat(path)
 	}
-
 }
 
 // FilesIsExistNow to remove un-existed cache
@@ -157,6 +155,12 @@ func (sc *StatCache) GetStat(path string) (*fuse.Stat_t, error) {
 		return v.(*fuse.Stat_t), nil
 	}
 
+	// if have pre load, but can not found in cache
+	// it means not exist
+	if sc.IsOpenedDirectoryFile(path) {
+		return nil, hana.ErrFileNotFound
+	}
+
 	v, err := sc.GetStatDirect(path)
 
 	if err != nil {
@@ -204,6 +208,7 @@ func (sc *StatCache) GetStatDirect(path string) (*fuse.Stat_t, error) {
 
 // RefreshCache stats
 func (sc *StatCache) RefreshCache() {
+	// ensure only one goroutine run refresh job
 	sc.refreshLock.Lock()
 	defer sc.refreshLock.Unlock()
 
@@ -280,13 +285,6 @@ func (sc *StatCache) PreCacheDirectory(path string, v *Directory) {
 
 		sc.FileIsExistNow(nodePath)
 		sc.PreCacheStat(nodePath, st)
-
-		unixTerminalCheckFile := "._" + nodeName
-		unixTerminalCheckFilePath := filepath.Join(path, unixTerminalCheckFile)
-
-		if _, exist := v.children.Load(unixTerminalCheckFile); !exist {
-			sc.AddNotExistFileCache(unixTerminalCheckFilePath)
-		}
 
 		return true
 	})

@@ -208,19 +208,17 @@ func (f *HanaFS) Rename(oldpath string, newpath string) (errc int) {
 	return 0
 }
 
+// Getattr for file/dir
 func (f *HanaFS) Getattr(path string, s *fuse.Stat_t, fh uint64) int {
-
-	if f.statCache.CheckIfFileNotExist(path) {
-		return -fuse.ENOENT
-	}
 
 	stat, err := f.statCache.GetStat(path)
 
 	if err != nil {
-		f.statCache.AddNotExistFileCache(path)
 		return -fuse.ENOENT
 	}
 
+	// sometimes, system can not provide correct uid & gid
+	// so assign current user later (here)
 	if stat.Uid == 0 {
 		uid, gid, _ := fuse.Getcontext()
 		stat.Uid = uid
@@ -233,15 +231,18 @@ func (f *HanaFS) Getattr(path string, s *fuse.Stat_t, fh uint64) int {
 
 }
 
+// Setxattr for OSX
 func (f *HanaFS) Setxattr(path string, name string, value []byte, flags int) (errc int) {
 	return 0
 }
 
+// Getxattr for OSX
 func (f *HanaFS) Getxattr(path string, name string) (errc int, xatr []byte) {
 	// mac os x attr
 	return -fuse.ENOATTR, nil
 }
 
+// Read content from path
 func (f *HanaFS) Read(path string, buff []byte, ofst int64, fh uint64) (n int) {
 	contents, err := f.client.ReadFile(path)
 

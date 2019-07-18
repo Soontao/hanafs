@@ -35,7 +35,8 @@ Mount hana xs repository to local filesystem
 * [ ] Performance
 * [ ] Upload binary files (images/...)
 * [ ] Build executable binaries for windows/osx/linux
-* [ ] Refactor cache
+* [x] Refactor cache
+* [ ] Deep load in startup
 * [ ] CI
 * [ ] Documentation & presentation
 
