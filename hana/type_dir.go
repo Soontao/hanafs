@@ -71,7 +71,7 @@ type Child struct {
 	Attributes       Attributes    `json:"Attributes"`
 	Workspaces       []interface{} `json:"Workspaces"`
 	// for file, sap back pack is different
-	// SapBackPack      ChildSapBackPack `json:"SapBackPack"`
+	SapBackPack interface{} `json:"SapBackPack"`
 }
 
 type ChildSapBackPack struct {

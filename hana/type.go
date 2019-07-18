@@ -10,4 +10,5 @@ type PathStat struct {
 	SymbolicLink bool
 	Activated    bool
 	TimeStamp    int64
+	Size         int64
 }

@@ -30,22 +30,29 @@ func (sc *StatCache) UIHaveOpenResource(path string) {
 	_, opened := sc.openResource.Load(path)
 
 	if !opened {
-		log.Printf("open resource: %v", path)
+		sc.refreshLock.Lock()
+		defer sc.refreshLock.Unlock()
+
 		sc.openResource.Store(path, true)
 		sc.RefreshStat(path)
 
 		// if opened resource is dir, preload sub dir of the dir
 		if stat, err := sc.GetStat(path); err == nil && isDir(stat.Mode) {
 
+			// refresh current dir stat
 			sc.RefreshDir(path)
 
 			if d, e := sc.GetDir(path); e == nil && d != nil {
+
 				d.children.Range(func(key interface{}, value interface{}) bool {
 					if value != nil {
 						stat := value.(*fuse.Stat_t)
 						if isDir(stat.Mode) {
 							subDirPath := filepath.Join(path, key.(string))
 							sc.RefreshDir(subDirPath)
+						} else {
+							subFilePath := filepath.Join(path, key.(string))
+							sc.RefreshStat(subFilePath)
 						}
 					}
 					return true
@@ -187,10 +194,10 @@ func (sc *StatCache) GetStatDirect(path string) (*fuse.Stat_t, error) {
 			currentStat := c.(*fuse.Stat_t)
 
 			// if changed, retrive the new size
-			if sc.IsOpenedDirectoryFile(path) && currentStat.Mtim.Sec != v.Mtim.Sec {
+			if sc.IsOpenedDirectoryFile(path) && (currentStat.Mtim.Sec != v.Mtim.Sec || currentStat.Size == 0) {
 				v.Size = sc.fileSizeProvider(path)
 			} else {
-				v.Size = currentStat.Size
+				return currentStat, nil
 			}
 
 		} else {
@@ -223,7 +230,6 @@ func (sc *StatCache) RefreshCache() {
 		if err != nil {
 			if err == hana.ErrFileNotFound {
 				sc.RemoveStatCache(n)
-				sc.AddNotExistFileCache(n)
 			}
 			log.Println(err)
 			// log error
@@ -250,8 +256,6 @@ func (sc *StatCache) RefreshCache() {
 
 				defer wg.Done()
 
-				log.Printf("refresh data for: %v", n)
-
 				pValue := pool.Process(n)
 
 				if pValue != nil {
@@ -268,6 +272,17 @@ func (sc *StatCache) RefreshCache() {
 	// wait all goroutines finished
 	wg.Wait()
 
+	// refresh all files size opened
+	sc.cacheRangeAll(func(path string, stat *fuse.Stat_t) {
+		if !isDir(stat.Mode) && sc.IsOpenedDirectoryFile(path) {
+			wg.Add(1)
+			go func(p string) { defer wg.Done(); sc.RefreshStat(p) }(path)
+		}
+	})
+
+	// wait all stat refresh
+	wg.Wait()
+
 	return
 }
 
@@ -279,11 +294,18 @@ func (sc *StatCache) PreCacheDirectory(path string, v *Directory) {
 	v.children.Range(func(key interface{}, value interface{}) bool {
 
 		nodeName := key.(string)
-		st := value.(*fuse.Stat_t)
-
 		nodePath := filepath.Join(path, nodeName)
+		st := value.(*FileSystemStat)
 
-		sc.FileIsExistNow(nodePath)
+		// process file size
+		if c, exist := sc.cache.Load(path); exist {
+			currentStat := c.(*FileSystemStat)
+			if currentStat.Mtim.Sec != st.Mtim.Sec {
+				// if updated, update file size info.
+				st.Size = sc.fileSizeProvider(nodePath)
+			}
+		}
+
 		sc.PreCacheStat(nodePath, st)
 
 		return true
@@ -324,16 +346,27 @@ func (sc *StatCache) GetDirDirect(path string) (*Directory, error) {
 
 // RefreshDir and item stats
 func (sc *StatCache) RefreshDir(path string) {
-	if dir, err := sc.GetDirDirect(path); err != nil {
+
+	dir, err := sc.GetDirDirect(path)
+
+	if err == nil {
 		sc.PreCacheDirectory(path, dir)
+	} else {
+		log.Println(err)
 	}
+
 }
 
 // RefreshStat value
 func (sc *StatCache) RefreshStat(path string) {
-	log.Printf("refresh stat: %v", path)
-	if v, err := sc.GetStatDirect(path); err != nil {
+	if v, err := sc.GetStatDirect(path); err == nil {
 		sc.PreCacheStat(path, v)
+	} else {
+		if err == hana.ErrFileNotFound {
+			sc.RemoveStatCache(path)
+		} else {
+			log.Println(err)
+		}
 	}
 }
 

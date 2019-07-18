@@ -14,6 +14,9 @@ type Directory struct {
 // ConcurrentMap is goroutine safe map
 type ConcurrentMap = sync.Map
 
+// FileSystemStat store the stat of file node
+type FileSystemStat = fuse.Stat_t
+
 // StatProvider provide the file stat related information
 type StatProvider func(string) (*fuse.Stat_t, error)
 

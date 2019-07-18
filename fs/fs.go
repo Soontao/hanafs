@@ -8,6 +8,7 @@ import (
 	"github.com/Soontao/hanafs/hana"
 	"github.com/billziss-gh/cgofuse/fuse"
 	"github.com/roylee0704/gron"
+	"github.com/tidwall/gjson"
 )
 
 // DefaultRemoteCacheSeconds duration
@@ -113,6 +114,10 @@ func (f *HanaFS) Utimens(path string, tmsp []fuse.Timespec) (errc int) {
 
 func (f *HanaFS) Write(path string, buff []byte, ofst int64, fh uint64) (n int) {
 
+	data := make([]byte, len(buff))
+
+	copy(data, buff)
+
 	stat := &fuse.Stat_t{}
 	err := f.Getattr(path, stat, fh)
 
@@ -121,11 +126,15 @@ func (f *HanaFS) Write(path string, buff []byte, ofst int64, fh uint64) (n int) 
 	}
 
 	if ofst != 0 {
-		// log error here
-		return -fuse.EFAULT
+		content, e := f.client.ReadFile(path)
+		if e != nil {
+			// log error here
+			return -fuse.EFAULT
+		}
+		data = append(content[0:ofst], data...)
 	}
 
-	if e := f.client.WriteFileContent(path, buff); e != nil {
+	if e := f.client.WriteFileContent(path, data); e != nil {
 		// log error here
 		return -fuse.EFAULT
 	}
@@ -138,7 +147,11 @@ func (f *HanaFS) Write(path string, buff []byte, ofst int64, fh uint64) (n int) 
 
 func (f *HanaFS) Truncate(path string, size int64, fh uint64) (errc int) {
 	// mac os/linux change the file size
-
+	stat, err := f.statCache.GetStat(path)
+	if err != nil {
+		return -fuse.EIO
+	}
+	stat.Size = size
 	return 0
 }
 
@@ -276,33 +289,38 @@ func (f *HanaFS) getDir(path string) (*Directory, error) {
 		return nil, err
 	}
 
-	wg := sync.WaitGroup{}
+	now := fuse.Now()
+
+	uid, gid, _ := fuse.Getcontext()
 
 	for _, hanaChild := range dir.Children {
 
 		nodeName := hanaChild.Name
 
-		nodePath := filepath.Join(path, nodeName)
-		wg.Add(1)
+		s := &FileSystemStat{
+			Nlink: 1,
+			Gid:   gid,
+			Uid:   uid,
+			Atim:  now,
+			Size:  0,
+		}
 
-		go func(s, p string) {
+		if hanaChild.Directory {
+			s.Mode = fuse.S_IFDIR | 0777
+		} else {
 
-			defer wg.Done()
-			st, err := f.statCache.GetStatDirect(p)
-
-			if err != nil {
-				// log error
-				return
+			// file
+			if sBackPack, ok := hanaChild.SapBackPack.(string); ok {
+				ts := gjson.Get(sBackPack, "ActivatedAt").Int()
+				s.Mtim = *ToFuseTimeStamp(ts)
 			}
 
-			rt.children.Store(s, st)
+			s.Mode = fuse.S_IFREG | 0777 // Regular File.
+		}
 
-		}(nodeName, nodePath)
+		rt.children.Store(nodeName, s)
 
 	}
-
-	// wait parallel requests finished
-	wg.Wait()
 
 	return rt, nil
 }
@@ -377,13 +395,6 @@ func NewHanaFS(client *hana.Client) *HanaFS {
 		fileSizeProvider: fs.getFileSize,
 		openResource:     &sync.Map{},
 	}
-
-	// Retrieve root dir directly at startup
-	fs.statCache.GetDir("/")
-	// refresh first and sub directory at startup
-	fs.statCache.RefreshCache()
-	// refresh sub sub dir
-	fs.statCache.RefreshCache()
 
 	cron.AddFunc(gron.Every(DefaultRemoteCacheSeconds*time.Second), fs.statCache.RefreshCache)
 
