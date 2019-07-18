@@ -36,7 +36,7 @@ Mount hana xs repository to local filesystem
 * [ ] Upload binary files (images/...)
 * [ ] Build executable binaries for windows/osx/linux
 * [x] Refactor cache
-* [ ] Deep load in startup
+* [ ] Deep load at startup
 * [ ] CI
 * [ ] Documentation & presentation
 
@@ -44,7 +44,7 @@ Mount hana xs repository to local filesystem
 
 * File/directory status will be cached for better user experience, so that some properties will have some delay.
 * Users' read/write operation without any cache, so that when user open/save file, OS/editor will be blocked. 
-* You can **NOT** move file from one package to another package. 
+* User can **NOT** move file from one package to another package. 
 * MacOS will not auto remove the mount point so that even you kill this application. So that the same name directory can be used as mount point one time before you restart.
 * Unix `ln` and windows `shortcut` is not impl
 * Please choose your own work package (instead of root package of hana) to improve the fs performance.
