@@ -15,8 +15,8 @@
         "env": {
           "HANA_USER": "btheo",
           "HANA_TENANT": "poca31015082.hana.ondemand.com",
-          "HANA_TENANT_BASE_PATH": "/sap/hana/ide",
-          "MOUNT_PATH": "../../tmp/base/ide"
+          "HANA_TENANT_BASE_PATH": "/public",
+          "MOUNT_PATH": "../../tmp/poc101"
         }
       },
       "windows": {

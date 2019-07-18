@@ -30,8 +30,6 @@ func (sc *StatCache) UIHaveOpenResource(path string) {
 	_, opened := sc.openResource.Load(path)
 
 	if !opened {
-		sc.refreshLock.Lock()
-		defer sc.refreshLock.Unlock()
 
 		sc.openResource.Store(path, true)
 		sc.RefreshStat(path)
@@ -270,17 +268,6 @@ func (sc *StatCache) RefreshCache() {
 	})
 
 	// wait all goroutines finished
-	wg.Wait()
-
-	// refresh all files size opened
-	sc.cacheRangeAll(func(path string, stat *fuse.Stat_t) {
-		if !isDir(stat.Mode) && sc.IsOpenedDirectoryFile(path) {
-			wg.Add(1)
-			go func(p string) { defer wg.Done(); sc.RefreshStat(p) }(path)
-		}
-	})
-
-	// wait all stat refresh
 	wg.Wait()
 
 	return

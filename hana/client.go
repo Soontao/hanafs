@@ -280,7 +280,7 @@ func (c *Client) ReadDirectory(filePath string) (*DirectoryDetail, error) {
 	res, err := c.request(
 		"GET",
 		c.formatDtFilePath(filePath),
-		req.QueryParam{"depth": 1},
+		req.QueryParam{"depth": 2},
 	)
 
 	if err != nil {
