@@ -36,6 +36,11 @@ type Client struct {
 	tokenLock     sync.RWMutex
 }
 
+// GetBaseDirectory path
+func (c *Client) GetBaseDirectory() string {
+	return c.baseDirectory
+}
+
 // get csrf token value
 func (c *Client) getToken() string {
 	c.tokenLock.RLock()
@@ -275,12 +280,16 @@ func (c *Client) WriteFileContent(path string, content []byte) (err error) {
 }
 
 // ReadDirectory information
-func (c *Client) ReadDirectory(filePath string) (*DirectoryDetail, error) {
+func (c *Client) ReadDirectory(filePath string, depth int64) (*DirectoryDetail, error) {
+
+	if depth < 1 {
+		depth = 1
+	}
 
 	res, err := c.request(
 		"GET",
 		c.formatDtFilePath(filePath),
-		req.QueryParam{"depth": 2},
+		req.QueryParam{"depth": depth},
 	)
 
 	if err != nil {

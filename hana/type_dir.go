@@ -70,6 +70,9 @@ type Child struct {
 	Directory        bool          `json:"Directory"`
 	Attributes       Attributes    `json:"Attributes"`
 	Workspaces       []interface{} `json:"Workspaces"`
+	RunLocation      string        `json:"RunLocation"`
+	// Children file or directory
+	Children []Child `json:"Children"`
 	// for file, sap back pack is different
 	SapBackPack interface{} `json:"SapBackPack"`
 }

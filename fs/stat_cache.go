@@ -20,8 +20,22 @@ type StatCache struct {
 	statProvider     StatProvider
 	dirProvider      DirectoryProvider
 	fileSizeProvider FileSizeProvider
-	cacheLock        sync.RWMutex
+	maxDepthLock     sync.RWMutex
 	refreshLock      sync.Mutex
+	maxDepth         int64
+}
+
+func (sc *StatCache) setMaxDepth(depth int64) {
+	sc.maxDepthLock.Lock()
+	defer sc.maxDepthLock.Unlock()
+	sc.maxDepth = depth
+}
+
+// GetMaxDepth for current
+func (sc *StatCache) GetMaxDepth() int64 {
+	sc.maxDepthLock.RLock()
+	defer sc.maxDepthLock.RUnlock()
+	return sc.maxDepth
 }
 
 // UIHaveOpenResource means the resource should be refresh
@@ -42,19 +56,17 @@ func (sc *StatCache) UIHaveOpenResource(path string) {
 
 			if d, e := sc.GetDir(path); e == nil && d != nil {
 
-				d.children.Range(func(key interface{}, value interface{}) bool {
-					if value != nil {
-						stat := value.(*fuse.Stat_t)
-						if isDir(stat.Mode) {
-							subDirPath := filepath.Join(path, key.(string))
-							sc.RefreshDir(subDirPath)
+				for _, w := range d {
+					sPath := w.Path
+					oStat := w.Stat
+					if oStat != nil {
+						if isDir(oStat.Mode) {
+							sc.RefreshDir(sPath)
 						} else {
-							subFilePath := filepath.Join(path, key.(string))
-							sc.RefreshStat(subFilePath)
+							sc.RefreshStat(sPath)
 						}
 					}
-					return true
-				})
+				}
 
 			}
 
@@ -128,26 +140,25 @@ func (sc *StatCache) GetOrCacheStat(path string) (*fuse.Stat_t, error) {
 }
 
 // GetDirStats func, by prefix
-func (sc *StatCache) GetDirStats(path string) (rt *Directory) {
+func (sc *StatCache) GetDirStats(path string) (rt []*FileSystemStatWrapper) {
+
 	path = normalizePath(path)
 
-	rt = &Directory{
-		children: &sync.Map{},
-	}
-
-	sc.cache.Range(func(key interface{}, value interface{}) bool {
-
-		base, name := filepath.Split(key.(string))
+	sc.cacheRangeAll(func(aPath string, oStat *fuse.Stat_t) {
+		// ignore path stat itself
+		if aPath == path {
+			return
+		}
+		base, _ := filepath.Split(aPath)
 
 		if len(base) > 1 {
 			base = strings.TrimRight(base, "/")
 		}
 
 		if base == path {
-			rt.children.Store(name, value)
+			rt = append(rt, NewFileSystemStatWrapper(aPath, oStat))
 		}
 
-		return true
 	})
 
 	return rt
@@ -258,7 +269,7 @@ func (sc *StatCache) RefreshCache() {
 
 				if pValue != nil {
 					// update file stat caches
-					sc.PreCacheDirectory(n, pValue.(*Directory))
+					sc.PreCacheDirectory(n, pValue.([]*FileSystemStatWrapper))
 				}
 
 			}(name)
@@ -274,34 +285,29 @@ func (sc *StatCache) RefreshCache() {
 }
 
 // PreCacheDirectory value, will not remove
-func (sc *StatCache) PreCacheDirectory(path string, v *Directory) {
+func (sc *StatCache) PreCacheDirectory(path string, v []*FileSystemStatWrapper) {
 
 	path = normalizePath(path)
 
-	v.children.Range(func(key interface{}, value interface{}) bool {
-
-		nodeName := key.(string)
-		nodePath := filepath.Join(path, nodeName)
-		st := value.(*FileSystemStat)
-
-		// process file size
-		if c, exist := sc.cache.Load(path); exist {
+	for _, w := range v {
+		aPath := w.Path
+		oStat := w.Stat
+		if c, exist := sc.cache.Load(aPath); exist {
 			currentStat := c.(*FileSystemStat)
-			if currentStat.Mtim.Sec != st.Mtim.Sec {
+			if currentStat.Mtim.Sec != oStat.Mtim.Sec {
 				// if updated, update file size info.
-				st.Size = sc.fileSizeProvider(nodePath)
+				oStat.Size = sc.fileSizeProvider(aPath)
 			}
+
 		}
+		sc.PreCacheStat(aPath, oStat)
 
-		sc.PreCacheStat(nodePath, st)
-
-		return true
-	})
+	}
 
 }
 
-// GetDir directly, if not exist, will retrive and cache it
-func (sc *StatCache) GetDir(path string) (*Directory, error) {
+// GetDir inner content directly, if not exist, will retrive and cache it
+func (sc *StatCache) GetDir(path string) ([]*FileSystemStatWrapper, error) {
 
 	if _, exist := sc.cache.Load(path); exist {
 		return sc.GetDirStats(path), nil
@@ -319,9 +325,9 @@ func (sc *StatCache) GetDir(path string) (*Directory, error) {
 }
 
 // GetDirDirect func, without cache & pre cache
-func (sc *StatCache) GetDirDirect(path string) (*Directory, error) {
+func (sc *StatCache) GetDirDirect(path string) ([]*FileSystemStatWrapper, error) {
 
-	v, err := sc.dirProvider(path)
+	v, err := sc.dirProvider(path, sc.GetMaxDepth()+2)
 
 	if err != nil {
 		return nil, err
@@ -374,4 +380,16 @@ func (sc *StatCache) RemoveStatCache(path string) {
 
 	sc.cache.Delete(path)
 
+}
+
+// NewStatCache constructor
+func NewStatCache(client *hana.Client) *StatCache {
+	return &StatCache{
+		cache:            &ConcurrentMap{},
+		statProvider:     CreateStatProvider(client),
+		dirProvider:      CreateDirectoryProvider(client),
+		fileSizeProvider: CreateFileSizeProvider(client),
+		openResource:     &ConcurrentMap{},
+		maxDepth:         3,
+	}
 }
