@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Jeffail/tunny"
 	"github.com/Soontao/hanafs/hana"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
@@ -228,58 +227,7 @@ func (sc *StatCache) RefreshCache() {
 	sc.refreshLock.Lock()
 	defer sc.refreshLock.Unlock()
 
-	wg := sync.WaitGroup{}
-
-	// limit request concurrent
-	pool := tunny.NewFunc(30, func(in interface{}) interface{} {
-
-		n := in.(string)
-		dir, err := sc.GetDirDirect(n)
-
-		if err != nil {
-			if err == hana.ErrFileNotFound {
-				sc.RemoveStatCache(n)
-			}
-			log.Println(err)
-			// log error
-			return nil
-		}
-
-		return dir
-
-	})
-
-	// each directory will update in parallel
-	sc.cache.Range(func(key interface{}, value interface{}) bool {
-
-		name := key.(string)
-
-		stat := value.(*fuse.Stat_t)
-
-		// only refresh directory when user opened its parent
-		if isDir(stat.Mode) && sc.IsOpenedDirectoryFile(name) {
-
-			wg.Add(1)
-
-			go func(n string) {
-
-				defer wg.Done()
-
-				pValue := pool.Process(n)
-
-				if pValue != nil {
-					// update file stat caches
-					sc.PreCacheDirectory(n, pValue.([]*FileSystemStatWrapper))
-				}
-
-			}(name)
-		}
-
-		return true
-	})
-
-	// wait all goroutines finished
-	wg.Wait()
+	sc.RefreshDir("/")
 
 	return
 }
@@ -290,16 +238,27 @@ func (sc *StatCache) PreCacheDirectory(path string, v []*FileSystemStatWrapper) 
 	path = normalizePath(path)
 
 	for _, w := range v {
+
 		aPath := w.Path
 		oStat := w.Stat
+
 		if c, exist := sc.cache.Load(aPath); exist {
+
 			currentStat := c.(*FileSystemStat)
+
 			if currentStat.Mtim.Sec != oStat.Mtim.Sec {
 				// if updated, update file size info.
 				oStat.Size = sc.fileSizeProvider(aPath)
+			} else {
+				// if not updated, use old size
+				oStat.Size = currentStat.Size
 			}
 
+		} else {
+			// first time added
+			oStat.Size = sc.fileSizeProvider(aPath)
 		}
+
 		sc.PreCacheStat(aPath, oStat)
 
 	}
@@ -327,6 +286,7 @@ func (sc *StatCache) GetDir(path string) ([]*FileSystemStatWrapper, error) {
 // GetDirDirect func, without cache & pre cache
 func (sc *StatCache) GetDirDirect(path string) ([]*FileSystemStatWrapper, error) {
 
+	// preload stat deep
 	v, err := sc.dirProvider(path, sc.GetMaxDepth()+2)
 
 	if err != nil {
@@ -337,15 +297,53 @@ func (sc *StatCache) GetDirDirect(path string) ([]*FileSystemStatWrapper, error)
 
 }
 
+// CleanNotExistedFiles list
+//
+// MUST provide the full files list from remote
+func (sc *StatCache) CleanNotExistedFiles(dirPath string, fullList []*FileSystemStatWrapper) {
+
+	remoteNotExistedNow := []string{}
+
+	sc.cacheRangeAll(func(path string, stat *fuse.Stat_t) {
+
+		if !strings.HasPrefix(path, dirPath) {
+			return
+		}
+
+		if path == dirPath {
+			return
+		}
+
+		stillExist := false
+
+		for _, aFSStat := range fullList {
+			if aFSStat.Path == path {
+				stillExist = true
+				break
+			}
+		}
+
+		if !stillExist {
+			remoteNotExistedNow = append(remoteNotExistedNow, path)
+		}
+
+	})
+
+	for _, removedPath := range remoteNotExistedNow {
+		sc.RemoveStatCache(removedPath)
+	}
+}
+
 // RefreshDir and item stats
 func (sc *StatCache) RefreshDir(path string) {
 
 	dir, err := sc.GetDirDirect(path)
 
 	if err == nil {
+		sc.CleanNotExistedFiles(path, dir)
 		sc.PreCacheDirectory(path, dir)
 	} else {
-		log.Println(err)
+		log.Printf("refresh dir '%v' failed: %v", path, err)
 	}
 
 }
@@ -390,6 +388,6 @@ func NewStatCache(client *hana.Client) *StatCache {
 		dirProvider:      CreateDirectoryProvider(client),
 		fileSizeProvider: CreateFileSizeProvider(client),
 		openResource:     &ConcurrentMap{},
-		maxDepth:         3,
+		maxDepth:         1,
 	}
 }

@@ -37,6 +37,7 @@ Mount hana xs repository to local filesystem
 * [ ] Build executable binaries for windows/osx/linux
 * [x] Refactor cache
 * [x] Deep load in directory metadata fetch
+* [ ] Only load one level metadata when open dir
 * [ ] CI
 * [ ] Documentation & presentation
 
