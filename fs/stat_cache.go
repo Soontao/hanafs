@@ -51,7 +51,7 @@ func (sc *StatCache) UIHaveOpenResource(path string) {
 		if stat, err := sc.GetStat(path); err == nil && isDir(stat.Mode) {
 
 			// refresh current dir stat
-			sc.RefreshDir(path)
+			sc.RefreshDir(path, false)
 
 			if d, e := sc.GetDir(path); e == nil && d != nil {
 
@@ -60,7 +60,7 @@ func (sc *StatCache) UIHaveOpenResource(path string) {
 					oStat := w.Stat
 					if oStat != nil {
 						if isDir(oStat.Mode) {
-							sc.RefreshDir(sPath)
+							sc.RefreshDir(sPath, false)
 						} else {
 							sc.RefreshStat(sPath)
 						}
@@ -227,7 +227,7 @@ func (sc *StatCache) RefreshCache() {
 	sc.refreshLock.Lock()
 	defer sc.refreshLock.Unlock()
 
-	sc.RefreshDir("/")
+	sc.RefreshDir("/", true)
 
 	return
 }
@@ -246,17 +246,23 @@ func (sc *StatCache) PreCacheDirectory(path string, v []*FileSystemStatWrapper) 
 
 			currentStat := c.(*FileSystemStat)
 
-			if currentStat.Mtim.Sec != oStat.Mtim.Sec {
-				// if updated, update file size info.
-				oStat.Size = sc.fileSizeProvider(aPath)
-			} else {
-				// if not updated, use old size
-				oStat.Size = currentStat.Size
+			if !isDir(currentStat.Mode) {
+				if currentStat.Mtim.Sec != oStat.Mtim.Sec || (sc.IsOpenedDirectoryFile(aPath) && currentStat.Size == 0) {
+					// if updated, update file size info.
+					oStat.Size = sc.fileSizeProvider(aPath)
+				} else {
+					// if not updated, use old size
+					oStat.Size = currentStat.Size
+				}
 			}
 
 		} else {
-			// first time added
-			oStat.Size = sc.fileSizeProvider(aPath)
+
+			if sc.IsOpenedDirectoryFile(aPath) {
+				// first time added
+				oStat.Size = sc.fileSizeProvider(aPath)
+			}
+
 		}
 
 		sc.PreCacheStat(aPath, oStat)
@@ -272,7 +278,7 @@ func (sc *StatCache) GetDir(path string) ([]*FileSystemStatWrapper, error) {
 		return sc.GetDirStats(path), nil
 	}
 
-	v, err := sc.GetDirDirect(path)
+	v, err := sc.GetDirDirect(path, false)
 
 	if err != nil {
 		return nil, err
@@ -284,10 +290,17 @@ func (sc *StatCache) GetDir(path string) ([]*FileSystemStatWrapper, error) {
 }
 
 // GetDirDirect func, without cache & pre cache
-func (sc *StatCache) GetDirDirect(path string) ([]*FileSystemStatWrapper, error) {
+func (sc *StatCache) GetDirDirect(path string, deepRefresh bool) ([]*FileSystemStatWrapper, error) {
+
+	depth := int64(2)
+
+	// if deep refresh
+	if deepRefresh {
+		depth = sc.GetMaxDepth() + 2
+	}
 
 	// preload stat deep
-	v, err := sc.dirProvider(path, sc.GetMaxDepth()+2)
+	v, err := sc.dirProvider(path, depth)
 
 	if err != nil {
 		return nil, err
@@ -305,6 +318,12 @@ func (sc *StatCache) CleanNotExistedFiles(dirPath string, fullList []*FileSystem
 	remoteNotExistedNow := []string{}
 
 	sc.cacheRangeAll(func(path string, stat *fuse.Stat_t) {
+
+		iDepth := int64(len(strings.Split(path, "/")))
+
+		if iDepth > sc.GetMaxDepth() {
+			return
+		}
 
 		if !strings.HasPrefix(path, dirPath) {
 			return
@@ -335,12 +354,14 @@ func (sc *StatCache) CleanNotExistedFiles(dirPath string, fullList []*FileSystem
 }
 
 // RefreshDir and item stats
-func (sc *StatCache) RefreshDir(path string) {
+func (sc *StatCache) RefreshDir(path string, deepRefresh bool) {
 
-	dir, err := sc.GetDirDirect(path)
+	dir, err := sc.GetDirDirect(path, deepRefresh)
 
 	if err == nil {
-		sc.CleanNotExistedFiles(path, dir)
+		if deepRefresh {
+			sc.CleanNotExistedFiles(path, dir)
+		}
 		sc.PreCacheDirectory(path, dir)
 	} else {
 		log.Printf("refresh dir '%v' failed: %v", path, err)
