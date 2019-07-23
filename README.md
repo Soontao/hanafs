@@ -7,16 +7,16 @@ Mount hana xs repository to local filesystem
 ### Windows
 
 1. Install [winfsp](https://github.com/billziss-gh/winfsp) library.
-1. Download released binary file.
+1. Download [released binary file](./releases).
 
 ### MacOS
 
 1. Install [osxfuse](https://osxfuse.github.io/) library.
-1. Download released binary file.
+1. Download[released binary file](./releases).
 
 ### Linux
 
-1. Just download released binary file.
+1. Just download [released binary file](./releases).
 
 ## Features
 
