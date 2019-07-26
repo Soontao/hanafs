@@ -292,11 +292,11 @@ func (sc *StatCache) GetDir(path string) ([]*FileSystemStatWrapper, error) {
 // GetDirDirect func, without cache & pre cache
 func (sc *StatCache) GetDirDirect(path string, deepRefresh bool) ([]*FileSystemStatWrapper, error) {
 
-	depth := int64(2)
+	depth := int64(1)
 
 	// if deep refresh
 	if deepRefresh {
-		depth = sc.GetMaxDepth() + 2
+		depth = sc.GetMaxDepth() + 1
 	}
 
 	// preload stat deep
